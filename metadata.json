@@ -1,0 +1,6 @@
+{
+  "name": "BRIMS - Batch Record Issuance Management System",
+  "description": "A GMP-compliant system for managing pharmaceutical batch records with electronic signatures and audit trails.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

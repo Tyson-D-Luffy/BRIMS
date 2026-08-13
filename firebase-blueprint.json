@@ -1,0 +1,398 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user with role-based access",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["ADMIN", "PRODUCTION_MANAGER", "OPERATOR", "QA"] },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "Batch": {
+      "title": "Batch",
+      "description": "Pharmaceutical batch record",
+      "type": "object",
+      "properties": {
+        "batchNumber": { "type": "string" },
+        "title": { "type": "string" },
+        "status": { "type": "string", "enum": ["ISSUED", "IN_PROGRESS", "REVIEW_PENDING", "APPROVED", "REJECTED"] },
+        "issuedBy": { "type": "string" },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "lastModifiedBy": { "type": "string" },
+        "lastModifiedAt": { "type": "string", "format": "date-time" },
+        "data": { "type": "object" },
+        "signatures": { "type": "array" }
+      },
+      "required": ["batchNumber", "title", "status", "issuedBy", "issuedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable log of system/batch actions conforming to GAMP and 21 CFR Part 11",
+      "type": "object",
+      "properties": {
+        "auditId": { "type": "string" },
+        "module": { "type": "string" },
+        "action": { "type": "string" },
+        "performedBy": { "type": "string" },
+        "userId": { "type": "string" },
+        "role": { "type": "string" },
+        "branch": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "oldValue": { "type": "object" },
+        "newValue": { "type": "object" },
+        "changeReason": { "type": "string" },
+        "ipAddress": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "diff": { "type": "object" },
+        "operation": { "type": "string" },
+        "signatureId": { "type": "string" },
+        "signatureMeaning": { "type": "string" }
+      },
+      "required": ["auditId", "timestamp", "userId", "performedBy", "action", "module", "role"]
+    },
+    "ProductMaster": {
+      "title": "ProductMaster",
+      "description": "Pharmaceutical product details",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "stage": { "type": "string" },
+        "documentNumber": { "type": "string" },
+        "documentVersion": { "type": "string" },
+        "documentUrl": { "type": "string" },
+        "effectiveDate": { "type": "string" },
+        "batchNumberSeries": { "type": "string" },
+        "startPage": { "type": "number" },
+        "endPage": { "type": "number" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "type", "stage", "documentNumber", "documentVersion", "effectiveDate", "batchNumberSeries", "startPage", "endPage", "status"]
+    },
+    "BatchSheetMaster": {
+      "title": "BatchSheetMaster",
+      "description": "Master template for batch records",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "masterName": { "type": "string" },
+        "version": { "type": "string" },
+        "status": { "type": "string", "enum": ["DRAFT", "UNDER_REVIEW", "APPROVED", "RETIRED"] },
+        "steps_json": { "type": "array" },
+        "recordCount": { "type": "number" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "isLocked": { "type": "boolean" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["productId", "masterName", "version", "status", "steps_json"]
+    },
+    "BatchSheetRecord": {
+      "title": "BatchSheetRecord",
+      "description": "Historical record snapshot of a batch sheet master",
+      "type": "object",
+      "properties": {
+        "masterId": { "type": "string" },
+        "masterSnapshot": { "type": "object" },
+        "changeReason": { "type": "string" },
+        "status": { "type": "string", "enum": ["DRAFT", "UNDER_REVIEW", "APPROVED", "REJECTED", "ARCHIVED"] },
+        "createdBy": { "type": "string" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string", "format": "date-time" },
+        "isLocked": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["masterId", "masterSnapshot", "changeReason", "status", "createdBy", "createdAt"]
+    },
+    "Approval": {
+      "title": "Approval",
+      "description": "Approval record for a batch sheet record",
+      "type": "object",
+      "properties": {
+        "recordId": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "comments": { "type": "string" },
+        "actionBy": { "type": "string" },
+        "actionAt": { "type": "string", "format": "date-time" },
+        "signatureRequired": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recordId", "status", "actionBy", "actionAt", "createdAt"]
+    },
+    "ElectronicSignature": {
+      "title": "ElectronicSignature",
+      "description": "21 CFR Part 11 compliant electronic signature",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "actionType": { "type": "string" },
+        "entityType": { "type": "string" },
+        "entityId": { "type": "string" },
+        "meaning": { "type": "string" },
+        "signedAt": { "type": "string", "format": "date-time" },
+        "ipAddress": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "actionType", "entityType", "entityId", "meaning", "signedAt", "ipAddress", "userAgent", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System notification for users or roles",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["INFO", "WARNING", "ERROR", "SUCCESS"] },
+        "targetType": { "type": "string", "enum": ["USER", "ROLE"] },
+        "targetId": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "readBy": { "type": "array", "items": { "type": "string" }, "description": "List of user UIDs who have read this role-based notification" },
+        "link": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "type", "targetType", "targetId", "isRead", "createdAt"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "User subscription to specific system events",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "eventTypes": { "type": "array", "items": { "type": "string" } },
+        "channels": { "type": "array", "items": { "type": "string", "enum": ["IN_APP", "EMAIL"] } },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "eventTypes", "channels", "updatedAt"]
+    },
+    "FileMetadata": {
+      "title": "FileMetadata",
+      "description": "Metadata for chunked file storage",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "mimetype": { "type": "string" },
+        "size": { "type": "number" },
+        "totalChunks": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "storageType": { "type": "string" }
+      },
+      "required": ["name", "size", "createdAt"]
+    },
+    "FileChunk": {
+      "title": "FileChunk",
+      "description": "A single chunk of a file",
+      "type": "object",
+      "properties": {
+        "data": { "type": "string" },
+        "sequence": { "type": "number" }
+      },
+      "required": ["data", "sequence"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "Department Master record",
+      "type": "object",
+      "properties": {
+        "departmentId": { "type": "string" },
+        "departmentCode": { "type": "string" },
+        "departmentName": { "type": "string" },
+        "description": { "type": "string" },
+        "branch": { "type": "string" },
+        "status": { "type": "string", "enum": ["Draft", "Review", "Approval", "Active", "Obsolete"] },
+        "branchType": { "type": "string", "enum": ["Single", "Multi"] },
+        "allowedBranches": { "type": "array", "items": { "type": "string" } },
+        "createdBy": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "approvedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["departmentId", "departmentCode", "departmentName", "description", "branch", "status"]
+    },
+    "DepartmentAuditLog": {
+      "title": "DepartmentAuditLog",
+      "description": "Audit trail log for Department actions",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "action": { "type": "string" },
+        "departmentCode": { "type": "string" },
+        "departmentName": { "type": "string" },
+        "oldValue": { "type": "object" },
+        "newValue": { "type": "object" },
+        "user": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "branch": { "type": "string" },
+        "reason": { "type": "string" },
+        "signatureId": { "type": "string" }
+      },
+      "required": ["logId", "departmentId", "action", "user", "timestamp", "branch", "reason"]
+    },
+    "Designation": {
+      "title": "Designation",
+      "description": "Designation Master record linked to Department",
+      "type": "object",
+      "properties": {
+        "designationId": { "type": "string" },
+        "designationCode": { "type": "string" },
+        "designationName": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "departmentName": { "type": "string" },
+        "description": { "type": "string" },
+        "remarks": { "type": "string" },
+        "status": { "type": "string", "enum": ["Draft", "Review", "Approval", "Active", "Obsolete"] },
+        "version": { "type": "number" },
+        "createdBy": { "type": "string" },
+        "createdOn": { "type": "string", "format": "date-time" },
+        "reviewedBy": { "type": "string" },
+        "reviewedOn": { "type": "string", "format": "date-time" },
+        "approvedBy": { "type": "string" },
+        "approvedOn": { "type": "string", "format": "date-time" },
+        "activatedBy": { "type": "string" },
+        "activatedOn": { "type": "string", "format": "date-time" }
+      },
+      "required": ["designationId", "designationCode", "designationName", "departmentId", "departmentName", "status", "version", "createdBy", "createdOn"]
+    },
+    "DesignationAuditLog": {
+      "title": "DesignationAuditLog",
+      "description": "Immutable audit trail log for designation master actions",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string" },
+        "designationId": { "type": "string" },
+        "action": { "type": "string" },
+        "designationCode": { "type": "string" },
+        "designationName": { "type": "string" },
+        "oldValue": { "type": "object" },
+        "newValue": { "type": "object" },
+        "user": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "department": { "type": "string" },
+        "reason": { "type": "string" },
+        "signatureId": { "type": "string" }
+      },
+      "required": ["logId", "designationId", "action", "user", "timestamp", "department", "reason"]
+    },
+    "DesignationApprovalTimeline": {
+      "title": "DesignationApprovalTimeline",
+      "description": "Complete lifecycle history of a designation",
+      "type": "object",
+      "properties": {
+        "timelineId": { "type": "string" },
+        "designationId": { "type": "string" },
+        "action": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "department": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "comments": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "required": ["timelineId", "designationId", "action", "userId", "userName", "department", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/departments/{departmentId}": {
+      "schema": "Department",
+      "description": "Department Master collection"
+    },
+    "/departmentAuditLogs/{logId}": {
+      "schema": "DepartmentAuditLog",
+      "description": "Immutable department master audit trail logs"
+    },
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/production_batches/{batchId}": {
+      "schema": "BatchIssuance",
+      "description": "Production batch records issued from batch sheet records"
+    },
+    "/audit_trail/{logId}": {
+      "schema": "AuditLog",
+      "description": "Audit logs (Legacy)"
+    },
+    "/batch_process_audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "GAMP batch process operational audit logs"
+    },
+    "/system_admin_audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System administration and security audit logs"
+    },
+    "/product_masters/{productId}": {
+      "schema": "ProductMaster",
+      "description": "Product master data"
+    },
+    "/batch_sheet_masters/{masterId}": {
+      "schema": "BatchSheetMaster",
+      "description": "Master batch protocols"
+    },
+    "/batch_sheet_records/{recordId}": {
+      "schema": "BatchSheetRecord",
+      "description": "Historical records of batch sheets"
+    },
+    "/approvals/{approvalId}": {
+      "schema": "Approval",
+      "description": "Approval workflow records"
+    },
+    "/electronic_signatures/{signatureId}": {
+      "schema": "ElectronicSignature",
+      "description": "21 CFR Part 11 electronic signatures"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "System notifications"
+    },
+    "/subscriptions/{userId}": {
+      "schema": "Subscription",
+      "description": "User event subscriptions"
+    },
+    "/internal_storage/{fileId}": {
+      "schema": "FileMetadata",
+      "description": "Metadata for files stored in Firestore chunks"
+    },
+    "/internal_storage/{fileId}/chunks/{chunkId}": {
+      "schema": "FileChunk",
+      "description": "Base64 encoded chunks of file data"
+    },
+    "/batch_number_formats/{formatId}": {
+      "schema": "BatchNumberFormat",
+      "description": "Batch number sequence formats defined by QA/Admins"
+    },
+    "/batch_number_records/{recordId}": {
+      "schema": "BatchNumberRecord",
+      "description": "Generated batch numbers with full GAMP-compliant tracking info"
+    },
+    "/batch_number_masters/{masterId}": {
+      "schema": "MasterItem",
+      "description": "Customizable configuration items for stages, recovery components, and generic codes"
+    },
+    "/designationMaster/{designationId}": {
+      "schema": "Designation",
+      "description": "Designation Master collection"
+    },
+    "/designationAuditLogs/{logId}": {
+      "schema": "DesignationAuditLog",
+      "description": "Immutable designation master audit trail logs"
+    },
+    "/designationApprovalTimeline/{timelineId}": {
+      "schema": "DesignationApprovalTimeline",
+      "description": "Designation approval workflow timelines"
+    }
+  }
+}

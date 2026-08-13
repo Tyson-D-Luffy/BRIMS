@@ -1,0 +1,328 @@
+Client SDK: Attempting Anonymous Auth...
+Client SDK: Auth successful.
+
+- Match found in "product_masters"! ID: JDFhfv4dNX3x8XTftbee
+  Data: {
+  "type": "",
+  "batchNumberSeries": "",
+  "createdBy": "virtual-qaissuerbr-e7fqmeyzx",
+  "effectiveDate": "2026-07-11T09:22:00.516Z",
+  "branch": "Masulkhana",
+  "history": [
+    {
+      "performedBy": "107 - qaissuer",
+      "timestamp": "2026-07-07T06:39:23.976Z",
+      "performedByUid": "virtual-qaissuerbr-e7fqmeyzx",
+      "toStatus": "Draft",
+      "reason": "Initial product draft registration",
+      "fromStatus": "",
+      "action": "Product Created"
+    },
+    {
+      "action": "Submit for Review",
+      "fromStatus": "Draft",
+      "reason": "Submitting product specifications for GAMP alignment",
+      "toStatus": "Pending for Review",
+      "performedByUid": "7Kh0LUTXPbhDIDUvmgKp9RZOp6e2",
+      "timestamp": "2026-07-09T18:39:10.518Z",
+      "performedBy": "Admin - admin"
+    },
+    {
+      "performedByUid": "virtual-qauser1bri-cqy493e7s",
+      "timestamp": "2026-07-11T09:20:12.039Z",
+      "performedBy": "101 - qa 1",
+      "action": "Review Initiated",
+      "fromStatus": "Pending for Review",
+      "reason": "QA reviewing product master metrics",
+      "toStatus": "Under Review"
+    },
+    {
+      "reason": "Approved and sealed: Mfg BPCR",
+      "toStatus": "Active",
+      "action": "Product Approved & Active",
+      "fromStatus": "Under Review",
+      "timestamp": "2026-07-11T09:22:00.516Z",
+      "performedBy": "102 - QA2",
+      "performedByUid": "virtual-qabrimscom-oxcmzghdn"
+    }
+  ],
+  "revisionNo": 0,
+  "approvedDate": "2026-07-11T09:22:00.516Z",
+  "createdByUserName": "qaissuer",
+  "approvedBy": "virtual-qabrimscom-oxcmzghdn",
+  "stage": "",
+  "approvedByEmail": "102 - QA2",
+  "createdAt": "2026-07-07T06:39:23.976Z",
+  "version": 1,
+  "updatedAt": "2026-07-11T09:22:00.516Z",
+  "title": "Dapagliflozin",
+  "description": "New  product",
+  "activeSince": "2026-07-11T09:22:00.516Z",
+  "workflowStatus": "Active",
+  "status": "active",
+  "createdByEmail": "107 - qaissuer",
+  "approvalComments": "Mfg BPCR"
+}
+Found 1 matches in "product_masters". (Total size: 10)
+
+- Match found in "notifications"! ID: C2OB8YiNfJBLA2Aqim92
+  Data: {
+  "title": "Product Master Under Review",
+  "targetType": "ROLE",
+  "message": "Review has been initiated for Product Master \"Dapagliflozin\".",
+  "readBy": [],
+  "link": "/product-masters",
+  "targetId": "QA",
+  "isRead": false,
+  "type": "INFO",
+  "createdAt": "2026-07-11T09:20:13.213Z",
+  "eventType": "product:review"
+}
+- Match found in "notifications"! ID: TX0B9JdKGp1JFmWo855B
+  Data: {
+  "title": "Product Master Pending Review",
+  "targetType": "ROLE",
+  "message": "Product Master \"Dapagliflozin\" has been submitted for review.",
+  "readBy": [
+    "7Kh0LUTXPbhDIDUvmgKp9RZOp6e2"
+  ],
+  "link": "/product-masters",
+  "targetId": "QA",
+  "isRead": false,
+  "type": "INFO",
+  "createdAt": "2026-07-09T18:39:11.359Z",
+  "eventType": "product:review"
+}
+- Match found in "notifications"! ID: vgVaSP18DVcHEb4UI3Yi
+  Data: {
+  "type": "INFO",
+  "createdAt": "2026-07-07T06:39:24.608Z",
+  "eventType": "create:product",
+  "title": "New Product Master Created",
+  "targetType": "ROLE",
+  "message": "Product Master draft \"Dapagliflozin\" has been created.",
+  "readBy": [
+    "7Kh0LUTXPbhDIDUvmgKp9RZOp6e2"
+  ],
+  "link": "/product-masters",
+  "targetId": "QA",
+  "isRead": false
+}
+- Match found in "notifications"! ID: yiqAPyglIWtxdiuELCYi
+  Data: {
+  "isRead": false,
+  "targetId": "QA",
+  "link": "/product-masters",
+  "readBy": [
+    "virtual-sourabhcho-sjunlptkf"
+  ],
+  "message": "Product Master \"Dapagliflozin\" has been approved and is now Active. Comments: Mfg BPCR",
+  "targetType": "ROLE",
+  "title": "Product Master Approved",
+  "eventType": "product:approve",
+  "createdAt": "2026-07-11T09:22:01.283Z",
+  "type": "SUCCESS"
+}
+Found 4 matches in "notifications". (Total size: 62)
+
+- Match found in "email_outbox"! ID: 36oytzcrLFnlJPTjd6VY
+  Data: {
+  "message": "Product Master \"Dapagliflozin\" has been approved and is now Active. Comments: Mfg BPCR",
+  "error": "Invalid login: 535-5.7.8 Username and Password not accepted. For more information, go to\n535 5.7.8  https://support.google.com/mail/?p=BadCredentials 5a478bee46e88-313b9ca880fsm9238133eec.23 - gsmtp",
+  "sentAt": "2026-07-11T09:22:02.767Z",
+  "htmlContent": "\n      <div style=\"font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 32px; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;\">\n        <div style=\"margin-bottom: 24px;\">\n          <h1 style=\"font-size: 20px; font-weight: 700; color: #0f172a; margin: 0; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9;\">BRIMS Alert</h1>\n        </div>\n        <h2 style=\"font-size: 16px; font-weight: 600; color: #1e293b; margin: 0 0 12px 0;\">Product Master Approved</h2>\n        <p style=\"color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;\">Product Master \"Dapagliflozin\" has been approved and is now Active. Comments: Mfg BPCR</p>\n        <p style=\"margin-top: 24px;\"><a href=\"https://ais-pre-wysee4ygq75kbr25ncdy7n-813258841581.asia-southeast1.run.app/product-masters\" style=\"background-color: #4f46e5; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">View Details</a></p>\n        <div style=\"margin-top: 36px; padding-top: 16px; border-top: 1px solid #f1f5f9; text-align: center;\">\n          <p style=\"color: #94a3b8; font-size: 11px; margin: 0;\">This email is sent on behalf of the Batch Record Information Management System (BRIMS).</p>\n          <p style=\"color: #94a3b8; font-size: 11px; margin: 4px 0 0 0;\">Compliance ID: 21-CFR-PART-11-ALERT</p>\n        </div>\n      </div>\n    ",
+  "to": "shakshay04@gmail.com",
+  "subject": "Product Master Approved",
+  "deliveryType": "SMTP",
+  "status": "FAILED"
+}
+- Match found in "email_outbox"! ID: aVSqvlqOrkX2rzDbg7JT
+  Data: {
+  "message": "Product Master \"Dapagliflozin\" has been submitted for review.",
+  "sentAt": "2026-07-09T18:39:13.040Z",
+  "error": "Invalid login: 535-5.7.8 Username and Password not accepted. For more information, go to\n535 5.7.8  https://support.google.com/mail/?p=BadCredentials a92af1059eb24-13b65960d88sm28555479c88.6 - gsmtp",
+  "htmlContent": "\n      <div style=\"font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 32px; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;\">\n        <div style=\"margin-bottom: 24px;\">\n          <h1 style=\"font-size: 20px; font-weight: 700; color: #0f172a; margin: 0; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9;\">BRIMS Alert</h1>\n        </div>\n        <h2 style=\"font-size: 16px; font-weight: 600; color: #1e293b; margin: 0 0 12px 0;\">Product Master Pending Review</h2>\n        <p style=\"color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;\">Product Master \"Dapagliflozin\" has been submitted for review.</p>\n        <p style=\"margin-top: 24px;\"><a href=\"https://ais-pre-wysee4ygq75kbr25ncdy7n-813258841581.asia-southeast1.run.app/product-masters\" style=\"background-color: #4f46e5; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">View Details</a></p>\n        <div style=\"margin-top: 36px; padding-top: 16px; border-top: 1px solid #f1f5f9; text-align: center;\">\n          <p style=\"color: #94a3b8; font-size: 11px; margin: 0;\">This email is sent on behalf of the Batch Record Information Management System (BRIMS).</p>\n          <p style=\"color: #94a3b8; font-size: 11px; margin: 4px 0 0 0;\">Compliance ID: 21-CFR-PART-11-ALERT</p>\n        </div>\n      </div>\n    ",
+  "to": "shakshay04@gmail.com",
+  "subject": "Product Master Pending Review",
+  "deliveryType": "SMTP",
+  "status": "FAILED"
+}
+- Match found in "email_outbox"! ID: ularOBSB3bMV96wl1JU6
+  Data: {
+  "htmlContent": "\n      <div style=\"font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 32px; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;\">\n        <div style=\"margin-bottom: 24px;\">\n          <h1 style=\"font-size: 20px; font-weight: 700; color: #0f172a; margin: 0; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9;\">BRIMS Alert</h1>\n        </div>\n        <h2 style=\"font-size: 16px; font-weight: 600; color: #1e293b; margin: 0 0 12px 0;\">Product Master Under Review</h2>\n        <p style=\"color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;\">Review has been initiated for Product Master \"Dapagliflozin\".</p>\n        <p style=\"margin-top: 24px;\"><a href=\"https://ais-pre-wysee4ygq75kbr25ncdy7n-813258841581.asia-southeast1.run.app/product-masters\" style=\"background-color: #4f46e5; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">View Details</a></p>\n        <div style=\"margin-top: 36px; padding-top: 16px; border-top: 1px solid #f1f5f9; text-align: center;\">\n          <p style=\"color: #94a3b8; font-size: 11px; margin: 0;\">This email is sent on behalf of the Batch Record Information Management System (BRIMS).</p>\n          <p style=\"color: #94a3b8; font-size: 11px; margin: 4px 0 0 0;\">Compliance ID: 21-CFR-PART-11-ALERT</p>\n        </div>\n      </div>\n    ",
+  "subject": "Product Master Under Review",
+  "to": "shakshay04@gmail.com",
+  "deliveryType": "SMTP",
+  "status": "FAILED",
+  "message": "Review has been initiated for Product Master \"Dapagliflozin\".",
+  "sentAt": "2026-07-11T09:20:14.948Z",
+  "error": "Invalid login: 535-5.7.8 Username and Password not accepted. For more information, go to\n535 5.7.8  https://support.google.com/mail/?p=BadCredentials 41be03b00d2f7-ca5b31628c1sm6021592a12.19 - gsmtp"
+}
+- Match found in "email_outbox"! ID: x1GtDxkpz9eqxpiPqrVF
+  Data: {
+  "sentAt": "2026-07-07T06:39:24.877Z",
+  "message": "Product Master draft \"Dapagliflozin\" has been created.",
+  "deliveryType": "SMTP",
+  "htmlContent": "\n      <div style=\"font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 32px; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;\">\n        <div style=\"margin-bottom: 24px;\">\n          <h1 style=\"font-size: 20px; font-weight: 700; color: #0f172a; margin: 0; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9;\">BRIMS Alert</h1>\n        </div>\n        <h2 style=\"font-size: 16px; font-weight: 600; color: #1e293b; margin: 0 0 12px 0;\">New Product Master Created</h2>\n        <p style=\"color: #475569; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;\">Product Master draft \"Dapagliflozin\" has been created.</p>\n        <p style=\"margin-top: 24px;\"><a href=\"https://ais-pre-wysee4ygq75kbr25ncdy7n-813258841581.asia-southeast1.run.app/product-masters\" style=\"background-color: #4f46e5; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">View Details</a></p>\n        <div style=\"margin-top: 36px; padding-top: 16px; border-top: 1px solid #f1f5f9; text-align: center;\">\n          <p style=\"color: #94a3b8; font-size: 11px; margin: 0;\">This email is sent on behalf of the Batch Record Information Management System (BRIMS).</p>\n          <p style=\"color: #94a3b8; font-size: 11px; margin: 4px 0 0 0;\">Compliance ID: 21-CFR-PART-11-ALERT</p>\n        </div>\n      </div>\n    ",
+  "to": "shakshay04@gmail.com",
+  "subject": "New Product Master Created"
+}
+Found 4 matches in "email_outbox". (Total size: 44)
+
+- Match found in "batch_number_formats"! ID: n0XntirsCxKrRU2Jo1ie
+  Data: {
+  "branch": "Masulkhana",
+  "updatedAt": "2026-07-11T09:55:28.826Z",
+  "createdAt": "2026-07-11T09:51:43.148Z",
+  "createdBy": "QA_User_1",
+  "formatName": "Dapagliflozin Propanediol Monohydrate",
+  "status": "ACTIVE",
+  "tokens": [
+    {
+      "source": "stage_code",
+      "id": "tok-1783763340158-y6d2blls9",
+      "type": "master_lookup",
+      "name": "Stage Code",
+      "mandatory": true
+    },
+    {
+      "mandatory": true,
+      "type": "static_text",
+      "name": "-",
+      "source": "-",
+      "id": "tok-1783763350590-fn6tj1iq"
+    },
+    {
+      "source": "generic_code",
+      "id": "tok-1783763357799-tkcxgzs2r",
+      "mandatory": true,
+      "type": "master_lookup",
+      "name": "Generic Code"
+    },
+    {
+      "name": "Base Batch Number",
+      "type": "master_lookup",
+      "mandatory": true,
+      "source": "base_batch_number",
+      "id": "tok-1783763365119-mqp5xjch6"
+    }
+  ],
+  "formatCode": "DP06-M",
+  "updatedBy": "QA_User_2"
+}
+Found 1 matches in "batch_number_formats". (Total size: 12)
+
+- Match found in "batch_number_records"! ID: AQcubsVEeP0X8sECOJXt
+  Data: {
+  "generatedOn": "2026-07-11T09:58:07.762Z",
+  "formatCode": "DP06-M",
+  "timeline": [
+    {
+      "comments": "Batch number generated locally",
+      "role": "PRODUCTION_MANAGER",
+      "user": "QA_User_3",
+      "timestamp": "2026-07-11T09:58:07.762Z",
+      "type": "draft"
+    }
+  ],
+  "status": "DRAFT",
+  "generatedBy": "QA_User_3",
+  "tokenBreakdown": [
+    {
+      "value": "DP06",
+      "type": "Master Lookup",
+      "token": "Stage Code"
+    },
+    {
+      "type": "Static Text",
+      "value": "-",
+      "token": "-"
+    },
+    {
+      "token": "Generic Code",
+      "value": "M",
+      "type": "Master Lookup"
+    },
+    {
+      "type": "Master Lookup",
+      "value": "26001",
+      "token": "Base Batch Number"
+    }
+  ],
+  "batchNumber": "DP06-M26001",
+  "tokenValues": {
+    "Base Batch Number": "26001",
+    "Generic Code": "M",
+    "Stage Code": "DP06"
+  },
+  "category": "MANUFACTURING",
+  "scenario": "MANUFACTURING Batch (DP06-M)",
+  "product": "Dapagliflozin",
+  "branch": "Masulkhana"
+}
+- Match found in "batch_number_records"! ID: dux7tBWojPVbXF88LGRc
+  Data: {
+  "status": "APPROVED",
+  "generatedBy": "Sourabh Chourasia",
+  "timeline": [
+    {
+      "role": "ADMIN",
+      "user": "Sourabh Chourasia",
+      "timestamp": "2026-07-11T10:05:28.999Z",
+      "type": "draft",
+      "comments": "Batch number generated locally"
+    },
+    {
+      "comments": "Submitted for final QA Approval",
+      "timestamp": "2026-07-11T10:05:36.801Z",
+      "type": "submitted",
+      "role": "ADMIN",
+      "user": "Sourabh Chourasia"
+    },
+    {
+      "type": "approved",
+      "timestamp": "2026-07-11T10:06:02.995Z",
+      "user": "Sourabh Chourasia",
+      "role": "QA_APPROVER",
+      "comments": "Verified sequence compliant as per SOP"
+    }
+  ],
+  "formatCode": "DP06-M",
+  "approvedDate": "2026-07-11T10:06:02.995Z",
+  "generatedOn": "2026-07-11T10:05:28.999Z",
+  "approvedBy": "Sourabh Chourasia",
+  "branch": "Masulkhana",
+  "scenario": "MANUFACTURING Batch (DP06-M)",
+  "product": "Dapagliflozin",
+  "category": "MANUFACTURING",
+  "tokenValues": {
+    "Base Batch Number": "26001",
+    "Generic Code": "M",
+    "Stage Code": "DP06"
+  },
+  "batchNumber": "DP06-M26001",
+  "tokenBreakdown": [
+    {
+      "token": "Stage Code",
+      "value": "DP06",
+      "type": "Master Lookup"
+    },
+    {
+      "value": "-",
+      "type": "Static Text",
+      "token": "-"
+    },
+    {
+      "token": "Generic Code",
+      "type": "Master Lookup",
+      "value": "M"
+    },
+    {
+      "type": "Master Lookup",
+      "value": "26001",
+      "token": "Base Batch Number"
+    }
+  ]
+}
+Found 2 matches in "batch_number_records". (Total size: 13)
+

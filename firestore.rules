@@ -1,0 +1,296 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).get('data', null);
+    }
+    
+    function hasRole(role) {
+      let data = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return isAuthenticated() && data != null && data.data != null && data.data.role == role;
+    }
+    
+    function isAdmin() {
+      let data = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return isAuthenticated() && (
+        (data != null && data.data != null && data.data.role == 'ADMIN') || 
+        (request.auth.token.email == "shakshay04@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+    
+    function isQA() {
+      return hasRole('QA');
+    }
+    
+    function isProdManager() {
+      return hasRole('PRODUCTION_MANAGER');
+    }
+    
+    function isOperator() {
+      return hasRole('OPERATOR');
+    }
+
+    // Validation helpers
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is string && ts.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Internal Storage (Chunked Files)
+    match /internal_storage/{fileId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidId(fileId);
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+      
+      match /chunks/{chunkId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidId(chunkId);
+        allow update: if isAuthenticated();
+        allow delete: if isAdmin();
+      }
+    }
+
+    // Users
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Permissions
+    match /permissions/{permissionId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Roles
+    match /roles/{roleId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Product Masters
+    match /product_masters/{productId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Batch Sheet Masters
+    match /batch_sheet_masters/{masterId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Batch Sheet Records (Historical)
+    match /batch_sheet_records/{recordId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Production Batches
+    match /production_batches/{batchId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Audit Trail (Immutable)
+    match /audit_trail/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Batch Process Audit Trail
+    match /batch_process_audit_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    // System Admin Audit Trail
+    match /system_admin_audit_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    // Electronic Signatures (Immutable)
+    match /electronic_signatures/{sigId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /signatures/{sigId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+    }
+
+    // Departments
+    match /departments/{departmentId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Department Audit Logs (Immutable)
+    match /departmentAuditLogs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Designations
+    match /designationMaster/{designationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /designations/{designationId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Compliance Learning Base & Operational Intelligence
+    match /compliance_learning_base/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /compliance_ai_audit_logs/{logId} {
+      allow read, create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /compliance_reports/{reportId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /compliance_findings/{findingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /compliance_scorecards/{scorecardId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /compliance_anomalies/{anomalyId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /compliance_scans/{scanId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /master_lookups/{lookupId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /products/{productId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /batch_record_templates/{templateId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Designation Audit Logs (Immutable)
+    match /designationAuditLogs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Designation Approval Timeline (Immutable)
+    match /designationApprovalTimeline/{timelineId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Subscriptions
+    match /subscriptions/{userId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Approvals
+    match /approvals/{approvalId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    // Email Outbox (Simulated & SMTP Alerts)
+    match /email_outbox/{emailId} {
+      allow read, create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // Batch Number Generation Engine
+    match /batch_number_formats/{formatId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /batch_number_records/{recordId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /batch_number_masters/{masterId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Health Check Probes
+    match /health/{healthId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /_health/{healthId} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}
