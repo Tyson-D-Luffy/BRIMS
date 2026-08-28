@@ -68,6 +68,14 @@ api.interceptors.response.use(
       }
     }
 
+    if (error.response?.status === 400) {
+      const errorMsg = error.response?.data?.message || error.response?.data?.error || (error.response?.data?.details ? JSON.stringify(error.response.data.details) : 'Bad request');
+      console.warn(`[API 400 Error]: ${originalRequest?.method?.toUpperCase()} ${originalRequest?.url} -> ${errorMsg}`, error.response?.data);
+      if (error.response.data?.details && Array.isArray(error.response.data.details)) {
+        console.warn('Validation details:', error.response.data.details);
+      }
+    }
+
     if (error.response?.status === 401) {
       const message = error.response?.data?.message;
       const code = error.response?.data?.code;

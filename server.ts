@@ -180,9 +180,6 @@ async function startServer() {
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
-        hmr: {
-          server: httpServer
-        }
       },
       appType: "spa",
     });
@@ -291,4 +288,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error("Critical error starting BRIMS server:", err);
+  process.exit(1);
+});

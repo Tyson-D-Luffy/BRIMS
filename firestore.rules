@@ -113,6 +113,12 @@ service cloud.firestore {
       allow write: if isAuthenticated();
     }
 
+    // Batch Sheet Requests
+    match /batch_sheet_requests/{requestId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
     // Production Batches
     match /production_batches/{batchId} {
       allow read: if isAuthenticated();

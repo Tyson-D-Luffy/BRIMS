@@ -75,9 +75,14 @@ export const userSchema = z.object({
     accountLockAfterFailedAttempts: z.boolean().optional().default(false),
     
     remarks: z.string().optional().nullable(),
-    effectiveFrom: z.string().min(1, "Effective From Date is required"),
+    effectiveFrom: z.string().optional().nullable(),
     effectiveTo: z.string().optional().nullable()
-  }).refine((data) => data.password === data.confirmPassword, {
+  }).passthrough().refine((data) => {
+    if (data.password && data.confirmPassword && data.password !== data.confirmPassword) {
+      return false;
+    }
+    return true;
+  }, {
     message: "Passwords do not match",
     path: ["confirmPassword"]
   })
@@ -128,8 +133,8 @@ export const updateUserSchema = z.object({
     effectiveFrom: z.string().optional(),
     effectiveTo: z.string().optional().nullable(),
     changeReason: changeReasonSchema.optional()
-  }).refine((data) => {
-    if (data.password && data.password !== data.confirmPassword) {
+  }).passthrough().refine((data) => {
+    if (data.password && data.confirmPassword && data.password !== data.confirmPassword) {
       return false;
     }
     return true;
@@ -142,5 +147,6 @@ export const updateUserSchema = z.object({
 export const assignRolesSchema = z.object({
   body: z.object({
     roles: z.array(z.string()).min(1, "At least one role is required")
-  })
+  }).passthrough()
 });
+

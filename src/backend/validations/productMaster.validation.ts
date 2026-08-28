@@ -8,8 +8,8 @@ export const productSchema = z.object({
     stage: z.string().optional(),
     batchNumberSeries: z.string().optional(),
     description: z.string().optional(),
-    status: z.enum(["active", "inactive"]).optional().default("active"),
-  }),
+    status: z.enum(["active", "inactive", "ACTIVE", "INACTIVE", "draft", "DRAFT"]).optional().default("active"),
+  }).passthrough(),
 });
 
 export const updateProductSchema = z.object({
@@ -19,13 +19,14 @@ export const updateProductSchema = z.object({
     stage: z.string().optional(),
     batchNumberSeries: z.string().optional(),
     description: z.string().optional(),
-    status: z.enum(["active", "inactive"]).optional(),
-    changeReason: changeReasonSchema,
-  }),
+    status: z.enum(["active", "inactive", "ACTIVE", "INACTIVE", "draft", "DRAFT"]).optional(),
+    changeReason: changeReasonSchema.optional(),
+  }).passthrough(),
 });
 
 export const deleteProductSchema = z.object({
   body: z.object({
-    changeReason: changeReasonSchema.describe("Reason for deletion"),
-  }),
+    changeReason: changeReasonSchema.optional(),
+  }).passthrough(),
 });
+

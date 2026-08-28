@@ -19,16 +19,7 @@ export default defineConfig(({mode}) => {
       host: '0.0.0.0',
       port: 3000,
       strictPort: true,
-      hmr: (process.env.AIS_DEV_URL || process.env.PORT || process.env.K_SERVICE) ? {
-        protocol: 'wss',
-        clientPort: 443,
-        overlay: false,
-      } : {
-        protocol: 'ws',
-        host: 'localhost',
-        port: 3000,
-        overlay: false,
-      },
+      hmr: false,
       watch: {
         usePolling: true,
         interval: 1000,

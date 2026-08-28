@@ -176,8 +176,8 @@ export class AuditService {
       }
     }
 
-    // Fallback lookup by userEmail if finalRole is empty or default OPERATOR
-    if ((!finalRole || finalRole === 'OPERATOR') && userEmail && userEmail !== 'system@internal') {
+    // Fallback lookup by userEmail if finalRole is empty or default OPERATOR (skip inside transaction to prevent transaction conflict)
+    if (!transaction && (!finalRole || finalRole === 'OPERATOR') && userEmail && userEmail !== 'system@internal') {
       try {
         const q = query(collection(db, "users"), where("email", "==", userEmail));
         const snap = await getDocs(q);

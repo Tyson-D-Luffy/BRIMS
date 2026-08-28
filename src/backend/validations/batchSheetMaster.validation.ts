@@ -3,8 +3,8 @@ import { changeReasonSchema } from "./common.validation.ts";
 
 export const masterSchema = z.object({
   body: z.object({
-    productId: z.string().min(1, "Product ID is required"),
-    masterName: z.string().min(1, "Master name is required"),
+    productId: z.string().optional().nullable(),
+    masterName: z.string().optional().nullable(),
     title: z.string().optional(),
     stage: z.string().optional(),
     type: z.string().optional(),
@@ -16,12 +16,12 @@ export const masterSchema = z.object({
       url: z.string(),
     })).optional(),
     steps_json: z.array(z.object({
-      step_number: z.number(),
-      description: z.string(),
-      equipment: z.string(),
-      expected_time: z.string()
-    })).optional(),
-  }),
+      step_number: z.number().optional(),
+      description: z.string().optional(),
+      equipment: z.string().optional(),
+      expected_time: z.string().optional()
+    }).passthrough()).optional(),
+  }).passthrough(),
 });
 
 export const updateMasterSchema = z.object({
@@ -38,39 +38,39 @@ export const updateMasterSchema = z.object({
       url: z.string(),
     })).optional(),
     steps_json: z.array(z.object({
-      step_number: z.number(),
-      description: z.string(),
-      equipment: z.string(),
-      expected_time: z.string()
-    })).optional(),
-    changeReason: changeReasonSchema,
-  }),
+      step_number: z.number().optional(),
+      description: z.string().optional(),
+      equipment: z.string().optional(),
+      expected_time: z.string().optional()
+    }).passthrough()).optional(),
+    changeReason: changeReasonSchema.optional(),
+  }).passthrough(),
 });
 
 export const masterStatusSchema = z.object({
   body: z.object({
-    status: z.enum(["DRAFT", "UNDER_REVIEW", "APPROVED", "RETIRED"]),
-    changeReason: changeReasonSchema,
-  }),
+    status: z.enum(["DRAFT", "UNDER_REVIEW", "APPROVED", "RETIRED", "ACTIVE", "INACTIVE"]),
+    changeReason: changeReasonSchema.optional(),
+  }).passthrough(),
 });
 
 export const newRecordSchema = z.object({
   body: z.object({
-    changeReason: changeReasonSchema,
-  }),
+    changeReason: changeReasonSchema.optional(),
+  }).passthrough(),
 });
 
 export const cloneMasterSchema = z.object({
   body: z.object({
-    newName: z.string().min(1, "New master name is required"),
-  }),
+    newName: z.string().optional().nullable(),
+  }).passthrough(),
 });
 
 export const duplicateStepsSchema = z.object({
   body: z.object({
-    sourceId: z.string().min(1, "Source master ID is required"),
-    changeReason: changeReasonSchema,
-  }),
+    sourceId: z.string().optional().nullable(),
+    changeReason: changeReasonSchema.optional(),
+  }).passthrough(),
 });
 
 export const updateStepSchema = z.object({
@@ -79,7 +79,8 @@ export const updateStepSchema = z.object({
       description: z.string().optional(),
       equipment: z.string().optional(),
       expected_time: z.string().optional()
-    }),
-    changeReason: changeReasonSchema,
-  }),
+    }).passthrough().optional(),
+    changeReason: changeReasonSchema.optional(),
+  }).passthrough(),
 });
+

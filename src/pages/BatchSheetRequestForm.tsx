@@ -590,19 +590,20 @@ export default function BatchSheetRequestForm() {
     
     setSubmitting(true);
     try {
+      const payloadMfgDate = startDate || new Date().toISOString().split('T')[0];
       const res = await api.post('/batches', {
         recordId: identifiedMaster.id,
-        manufacturingDate: startDate, // Using startDate as manufacturingDate for now
-        batchNumberSeries,
-        dropdownBatchSeries,
+        manufacturingDate: payloadMfgDate,
+        batchNumberSeries: batchNumberSeries || '',
+        dropdownBatchSeries: dropdownBatchSeries || '',
         singlePagesBatchNumber: singlePagesBatchNumber.trim() || undefined,
-        startDate,
-        endDate,
+        startDate: startDate || payloadMfgDate,
+        endDate: endDate || startDate || payloadMfgDate,
         signaturePassword: password,
         status: 'PENDING_REVIEW',
-        requestType,
+        requestType: requestType || 'NEW',
         reprintReason: requestType === 'REPRINT' ? reprintReason : undefined,
-        comments
+        comments: comments || ''
       });
       
       if (res.data.success) {

@@ -20,7 +20,8 @@ import {
   ChevronRight,
   AlertCircle,
   ClipboardList,
-  Printer
+  Printer,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -51,6 +52,7 @@ import { SignatureDialog } from '../components/SignatureDialog';
 import { ReturnDialog, ReturnDialogConfirmPayload } from '../components/ReturnDialog';
 import { ReturnBadge } from '../components/ReturnBadge';
 import { ReturnHistorySection } from '../components/ReturnHistorySection';
+import { SequentialPrintManager } from '../components/SequentialPrintManager';
 
 export default function BatchDetail() {
   const { id } = useParams<{ id: string }>();
@@ -337,27 +339,34 @@ export default function BatchDetail() {
       if (response.data.success) {
         const batchData = response.data.data;
         setBatch(batchData);
+        if (batchData.productInfo) {
+          setProductMaster(batchData.productInfo);
+        }
         
         // Fetch product info & masters in parallel track
         try {
           const [prodRes, mastersRes, timelineRes, usersRes] = await Promise.all([
-            api.get(`/product-masters/${batchData.productId}`),
+            batchData.productId 
+              ? api.get(`/product-masters/${batchData.productId}`).catch(() => ({ data: { success: false, data: null } }))
+              : Promise.resolve({ data: { success: false, data: null } }),
             api.get('/batch-number-engine/masters').catch(() => ({ data: { success: false, data: [] } })),
             api.get(`/batches/${id}/timeline`).catch(() => ({ data: { success: false, data: [] } })),
             api.get('/users').catch(() => ({ data: { success: false, data: [] } }))
           ]);
           
-          if (prodRes.data?.success) {
+          if (prodRes.data?.success && prodRes.data.data) {
             setProductMaster(prodRes.data.data);
+          } else if (batchData.productInfo) {
+            setProductMaster(batchData.productInfo);
           }
           if (mastersRes.data?.success) {
-            setMasters(mastersRes.data.data);
+            setMasters(mastersRes.data.data || []);
           }
           if (timelineRes.data?.success) {
-            setTimeline(timelineRes.data.data);
+            setTimeline(timelineRes.data.data || []);
           }
           if (usersRes.data?.success) {
-            setUsers(usersRes.data.data);
+            setUsers(usersRes.data.data || []);
           }
         } catch (prodErr) {
           console.error('Error fetching additional product metadata:', prodErr);
@@ -365,8 +374,7 @@ export default function BatchDetail() {
       }
     } catch (error: any) {
       console.error('Failed to fetch batch details', error);
-      toast.error('Failed to load batch record');
-      navigate('/batch-sheet-records/status');
+      toast.error(error.response?.data?.message || 'Failed to load batch record');
     } finally {
       setLoading(false);
     }
@@ -414,7 +422,31 @@ export default function BatchDetail() {
     return <LoadingPage label="Loading batch record..." />;
   }
 
-  if (!batch) return null;
+  if (!batch) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto text-center space-y-6">
+        <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto shadow-sm">
+          <AlertCircle className="w-8 h-8" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-slate-900">Batch Record Not Found</h2>
+          <p className="text-slate-500 mt-2 max-w-md mx-auto">
+            The requested batch issuance record could not be found or you may not have authorization for this branch.
+          </p>
+        </div>
+        <div className="flex justify-center gap-4">
+          <Button variant="outline" onClick={() => navigate('/batch-sheet-records/status')} className="rounded-full px-6">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Status List
+          </Button>
+          <Button onClick={fetchData} className="rounded-full px-6 bg-indigo-600 hover:bg-indigo-700 text-white">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // Resolve product stage and process lookups
   const selectedStageCode = batch.recordInfo?.masterSnapshot?.stage || productMaster?.stage;
@@ -579,16 +611,19 @@ export default function BatchDetail() {
           {batch.status === 'ISSUED' && (user?.permissions?.includes('batch:print') || user?.permissions?.includes('op:issued') || getUserBaseRole(user) === 'ADMIN') && (
             <Button 
               variant="outline" 
-              onClick={handlePrintBatchSheet}
+              onClick={() => {
+                const el = document.getElementById('sequential-printing-section');
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                  handlePrintBatchSheet();
+                }
+              }}
               disabled={printing}
-              className="rounded-full px-6 h-12 border-slate-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-100"
+              className="rounded-full px-6 h-12 border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold shadow-sm"
             >
-              {printing ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <FileText className="w-4 h-4 mr-2" />
-              )}
-              Print Batch Sheet
+              <Printer className="w-4 h-4 mr-2 text-indigo-600" />
+              Sequential Printing ({(batch.batchSheets || []).filter(s => s.status === 'PRINTED' || s.status === 'REPRINTED').length}/{(batch.batchSheets || []).length || 1})
             </Button>
           )}
 
@@ -786,6 +821,17 @@ export default function BatchDetail() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Sequential Individual Batch Sheet Printing Section */}
+          {['ISSUED', 'IN_PROGRESS', 'READY_FOR_PRODUCTION_HANDOVER', 'PRODUCTION_IN_PROGRESS', 'READY_FOR_QA_REVIEW', 'COMPLETED'].includes(batch.status) && (
+            <div id="sequential-printing-section">
+              <SequentialPrintManager
+                batch={batch}
+                productMaster={productMaster}
+                onBatchUpdated={fetchData}
+              />
+            </div>
+          )}
 
           {/* Workflow Chart of the Batch Sheet Issuance Process */}
           <Card className="border-none shadow-sm rounded-3xl overflow-hidden bg-white">

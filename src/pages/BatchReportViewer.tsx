@@ -45,18 +45,32 @@ export default function BatchReportViewer() {
         const batchData = response.data.data;
         setBatch(batchData);
         
-        const prodRes = await api.get(`/product-masters/${batchData.productId}`);
-        if (prodRes.data.success) {
-          const productData = prodRes.data.data;
+        let productData = batchData.productInfo || null;
+        if (batchData.productId) {
+          try {
+            const prodRes = await api.get(`/product-masters/${batchData.productId}`).catch(() => ({ data: { success: false, data: null } }));
+            if (prodRes.data?.success && prodRes.data.data) {
+              productData = prodRes.data.data;
+            }
+          } catch (e) {
+            console.warn('Could not fetch separate product master, using snapshot:', e);
+          }
+        }
+
+        if (productData) {
           setProductMaster(productData);
           
           // Generate PDF preview with user info for watermarking
-          const url = await generateBatchPDF(
-            batchData, 
-            productData, 
-            user ? { name: user.displayName || user.username || user.email || 'Unknown', id: user.employeeId || 'N/A' } : undefined
-          );
-          setPdfUrl(url);
+          try {
+            const url = await generateBatchPDF(
+              batchData, 
+              productData, 
+              user ? { name: user.displayName || user.username || user.email || 'Unknown', id: user.employeeId || 'N/A' } : undefined
+            );
+            setPdfUrl(url);
+          } catch (pdfErr) {
+            console.error("Failed to generate PDF for batch report:", pdfErr);
+          }
 
           // Log Audit Event
           try {
@@ -66,7 +80,7 @@ export default function BatchReportViewer() {
               entityId: id,
               details: {
                 batchNumber: batchData.batchNumber,
-                product: productData.title,
+                product: productData.title || 'Unknown',
                 timestamp: new Date().toISOString()
               }
             });
@@ -77,7 +91,7 @@ export default function BatchReportViewer() {
       }
     } catch (error: any) {
       console.error('Failed to fetch batch details', error);
-      toast.error('Failed to load report');
+      toast.error(error.response?.data?.message || 'Failed to load report');
       navigate('/batches');
     } finally {
       setLoading(false);

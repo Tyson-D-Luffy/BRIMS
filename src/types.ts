@@ -131,6 +131,132 @@ export interface ElectronicSignature {
 
 export type BatchIssuanceStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'ISSUED' | 'IN_PROGRESS' | 'COMPLETED' | 'RETURNED' | 'CANCELLED' | 'READY_FOR_PRODUCTION_HANDOVER' | 'PRODUCTION_IN_PROGRESS' | 'READY_FOR_QA_REVIEW' | 'HANDED_OVER';
 
+export type PrintJobStatus = 
+  | 'PENDING_SEQUENCE'
+  | 'PENDING'
+  | 'READY_TO_PRINT'
+  | 'PRINT_INITIATED'
+  | 'AWAITING_USER_CONFIRMATION'
+  | 'PRINTING'
+  | 'PRINTING_ISSUE'
+  | 'INTERRUPTED'
+  | 'REPRINT_REQUIRED'
+  | 'REPRINT_INITIATED'
+  | 'REPRINTING'
+  | 'PRINT_COMPLETED'
+  | 'PRINTED'
+  | 'REPRINTED'
+  | 'PRINT_FAILED';
+
+export type PrintDeliveryMethod = 'PRINTER' | 'PDF_DOWNLOAD';
+
+export type PrintJobType = 'FULL_PRINT' | 'PAGE_REPRINT';
+
+export interface PrintJob {
+  printJobId: string;
+  parentPrintJobId?: string | null;
+  requestId: string;
+  batchSheetId: string;
+  batchNumber: string;
+  sequenceNumber: number;
+  attemptNumber: number;
+  printType: PrintJobType;
+  requestedPages?: string;
+  normalizedPages?: number[];
+  totalPages: number;
+  deliveryMethod: PrintDeliveryMethod;
+  status: 'INITIATED' | 'AWAITING_USER_CONFIRMATION' | 'PRINTING_ISSUE' | 'COMPLETED' | 'CANCELLED';
+  startedAt: string;
+  completedAt?: string;
+  userId: string;
+  userName?: string;
+  userEmail?: string;
+  userRole?: string;
+  employeeId?: string;
+  branch?: string;
+  issueReason?: string;
+  comments?: string;
+  documentVersion?: string;
+  signatureId?: string;
+}
+
+export interface BatchSheetPrintHistoryEntry {
+  id: string;
+  printJobId?: string;
+  parentPrintJobId?: string | null;
+  action: 
+    | 'PRINT_INITIATED'
+    | 'PRINT_STARTED' 
+    | 'PDF_DOWNLOADED' 
+    | 'PRINTING_ISSUE_REPORTED' 
+    | 'PRINT_INTERRUPTED' 
+    | 'PRINT_FAILED' 
+    | 'REPRINT_INITIATED' 
+    | 'REPRINT_STARTED' 
+    | 'PRINT_COMPLETED' 
+    | 'REPRINT_COMPLETED' 
+    | 'LOCK_RELEASED' 
+    | 'PRINT_SEQUENCE_ADVANCED' 
+    | 'PRINT_SEQUENCE_COMPLETED';
+  status: PrintJobStatus;
+  timestamp: string;
+  performedBy: string;
+  userId: string;
+  userEmail: string;
+  userRole?: string;
+  employeeId?: string;
+  branch?: string;
+  attemptNumber?: number;
+  printType?: PrintJobType;
+  requestedPages?: string;
+  originalPagesReprinted?: string;
+  totalPages?: number;
+  deliveryMethod?: PrintDeliveryMethod;
+  reason?: string;
+  issueReason?: string;
+  comments?: string;
+  documentVersion?: string;
+  signatureId?: string;
+  signatureMeaning?: string;
+  copyNumber?: number;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+export interface BatchSheetItem {
+  id: string;
+  batchNumber: string;
+  sequenceIndex: number;
+  status: PrintJobStatus;
+  printCount: number;
+  attemptCount?: number;
+  currentPrintJobId?: string | null;
+  lastDeliveryMethod?: PrintDeliveryMethod;
+  activeLock?: {
+    lockedBy: string;
+    lockedByName: string;
+    lockedAt: string;
+    lockExpiresAt?: string;
+  } | null;
+  printedAt?: string;
+  printedBy?: string;
+  printedByName?: string;
+  printedByEmployeeId?: string;
+  completedAt?: string;
+  completedBy?: string;
+  completedByName?: string;
+  completedByEmployeeId?: string;
+  interruptedAt?: string;
+  interruptedBy?: string;
+  interruptedReason?: string;
+  issueReason?: string;
+  reprintReason?: string;
+  reprintPages?: string;
+  totalPages?: number;
+  history: BatchSheetPrintHistoryEntry[];
+  printJobs?: PrintJob[];
+}
+
 export interface BatchIssuance {
   id: string;
   batchNumber: string;
@@ -162,6 +288,18 @@ export interface BatchIssuance {
   comments?: string;
   rejectionReason?: string;
   printCounts?: { [item: string]: number };
+  batchSheets?: BatchSheetItem[];
+  printSequenceStatus?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
+  currentPrintableSequence?: number;
+  activePrintJobId?: string | null;
+  totalPrintAttempts?: number;
+  totalReprintAttempts?: number;
+  activePrintLock?: {
+    lockedSheetId: string;
+    lockedBy: string;
+    lockedByName: string;
+    lockedAt: string;
+  } | null;
   completedBy?: string;
   completedByName?: string;
   completedByRole?: string;

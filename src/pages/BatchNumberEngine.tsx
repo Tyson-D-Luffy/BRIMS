@@ -64,6 +64,21 @@ const getYearCode = () => {
   return new Date().getFullYear().toString().substring(2);
 };
 
+export const getFormatTokens = (f?: BatchNumberFormat | null): FormatToken[] => {
+  if (!f) return [];
+  if (Array.isArray(f.tokens) && f.tokens.length > 0) return f.tokens;
+  if (Array.isArray((f as any).elements) && (f as any).elements.length > 0) {
+    return (f as any).elements.map((el: any) => ({
+      id: el.id || `tok-${Math.random().toString(36).substring(4)}`,
+      name: el.label || el.value || el.type || 'Token',
+      type: el.type === 'fixed_text' || el.type === 'separator' ? 'static_text' : (el.type === 'year' || el.type === 'serial_number' ? 'auto_generated' : 'master_lookup'),
+      source: el.value || el.type || 'base_batch_number',
+      mandatory: true
+    }));
+  }
+  return [];
+};
+
 export default function BatchNumberEngine() {
   const { user } = useAuth();
   const { selectedBranch } = useBranch();
@@ -1278,7 +1293,7 @@ function DashboardScreen({
                                     <td className="p-4 px-6 font-mono text-xs font-bold text-indigo-700">{f.formatCode}</td>
                                     <td className="p-4 text-slate-700 font-medium">{f.formatName}</td>
                                     <td className="p-4 font-mono text-xs text-slate-500">
-                                      {f.tokens.map(tok => {
+                                      {getFormatTokens(f).map(tok => {
                                         if (tok.type === 'auto_generated') return '[Sequence]';
                                         if (tok.type === 'static_text') return tok.source;
                                         if (tok.type === 'master_lookup') return `[${tok.name}]`;
@@ -1540,7 +1555,7 @@ function FormatsScreen({
   const handleEditFormat = (f: BatchNumberFormat) => {
     setFormatCode(f.formatCode);
     setFormatName(f.formatName);
-    setFormatTokens(f.tokens);
+    setFormatTokens(getFormatTokens(f));
     setIsCreating(true);
   };
 
@@ -1839,7 +1854,7 @@ function FormatsScreen({
                         <td className="p-4 text-slate-700 font-medium">{f.formatName}</td>
                         <td className="p-4">
                           <div className="flex items-center gap-1">
-                            {f.tokens.map((tok, ti) => {
+                            {getFormatTokens(f).map((tok, ti) => {
                               let bg = 'bg-slate-100 text-slate-600 border border-slate-200';
                               if (tok.type === 'auto_generated') bg = 'bg-emerald-50 text-emerald-700 border border-emerald-100';
                               if (tok.type === 'master_lookup') bg = 'bg-indigo-50 text-indigo-700 border border-indigo-100';
@@ -1855,7 +1870,7 @@ function FormatsScreen({
                         </td>
                         <td className="p-4">
                           <span className="font-mono text-xs font-extrabold text-[#FF6321] tracking-wider bg-orange-50/50 border border-orange-100/50 px-2.5 py-1 rounded-md inline-block">
-                            {f.tokens.map((tok: any) => {
+                            {getFormatTokens(f).map((tok: any) => {
                               if (tok.type === 'auto_generated') return `${getYearCode()}001`;
                               if (tok.type === 'static_text') return tok.source;
                               if (tok.type === 'master_lookup') {
@@ -2494,7 +2509,7 @@ function CreatorScreen({
     
     // Clear collections lists
     const initialCollections: Record<string, string[]> = {};
-    activeFormat.tokens.forEach(tok => {
+    getFormatTokens(activeFormat).forEach(tok => {
       if (tok.type === 'auto_generated') {
         initialInputs[tok.id] = baseVal;
       }
@@ -2538,7 +2553,7 @@ function CreatorScreen({
   // Render format preview dynamically using populated inputs
   const compileFinalBatchNumberString = () => {
     if (!activeFormat) return '';
-    return activeFormat.tokens.map(tok => {
+    return getFormatTokens(activeFormat).map(tok => {
       if (tok.type === 'auto_generated') {
         return inputs[tok.id] || inputs['Base Batch Number'] || '';
       }
@@ -2561,7 +2576,7 @@ function CreatorScreen({
     // Check mandatory fields re populated
     let valid = true;
     if (activeFormat) {
-      activeFormat.tokens.forEach(tok => {
+      getFormatTokens(activeFormat).forEach(tok => {
         if (tok.mandatory) {
           if (tok.type === 'auto_generated' && !inputs[tok.id] && !inputs['Base Batch Number']) {
             toast.error(`Please select key value: "${tok.name}"`);
@@ -2594,7 +2609,7 @@ function CreatorScreen({
     if (!activeFormat) return;
 
     // Build the structural breakdown details
-    const breakdown: TokenBreakdownItem[] = activeFormat.tokens.map(tok => {
+    const breakdown: TokenBreakdownItem[] = getFormatTokens(activeFormat).map(tok => {
       let val = '';
       if (tok.type === 'auto_generated') val = inputs[tok.id] || inputs['Base Batch Number'] || '';
       else if (tok.type === 'static_text') val = tok.source;
@@ -2897,7 +2912,7 @@ function CreatorScreen({
                     <p className="text-xs text-slate-500">Format: <span className="font-bold text-slate-800">{activeFormat.formatCode}</span></p>
                   </div>
                   <Badge className="bg-emerald-600 text-white hover:bg-emerald-700 font-mono tracking-wider font-extrabold rounded-lg py-1 px-3">
-                    {activeFormat.tokens.map(t => {
+                    {getFormatTokens(activeFormat).map(t => {
                       if (t.type === 'auto_generated') return 'YEAR###';
                       return t.name;
                     }).join('/')}
@@ -2932,7 +2947,7 @@ function CreatorScreen({
               <div className="space-y-6">
                 
                 {/* Dynamically render only required input fields */}
-                {activeFormat.tokens.map((tok) => {
+                {getFormatTokens(activeFormat).map((tok) => {
                   if (tok.type === 'auto_generated') {
                     const optionsList = masters.filter(m => m.type === 'base_batch_number' && m.status === 'ACTIVE');
 
@@ -3116,7 +3131,7 @@ function CreatorScreen({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
-                      {activeFormat?.tokens.map((tok, i) => {
+                      {getFormatTokens(activeFormat).map((tok, i) => {
                         let matchedVal = '';
                         if (tok.type === 'auto_generated') matchedVal = inputs[tok.id] || inputs['Base Batch Number'];
                         else if (tok.type === 'static_text') matchedVal = tok.source;

@@ -43,11 +43,11 @@ const navigation = [
     ]
   },
   {
-    name: 'Audits',
+    name: 'Audit Logs',
     icon: History,
     submenu: [
-      { name: 'Batch Process Audit', href: '/audit/batch' },
-      { name: 'System Admin Audit', href: '/audit/system' },
+      { name: 'Batch process Audit logs', href: '/audit/batch' },
+      { name: 'System Admin Audit logs', href: '/audit/system' },
     ]
   },
   { name: 'Admin Panel', href: '/admin', icon: Shield },
@@ -118,7 +118,7 @@ export default function Sidebar({ mobile, onClose }: SidebarProps) {
   const [openMenus, setOpenMenus] = React.useState<Record<string, boolean>>({
     'Masters': location.pathname.startsWith('/product-masters') || location.pathname.startsWith('/batch-sheet-masters') || location.pathname.startsWith('/batch-number-generator-engine') || location.pathname.startsWith('/department-masters') || location.pathname.startsWith('/designation-masters'),
     'Batch Sheet': location.pathname.startsWith('/batches') || location.pathname.startsWith('/batch-sheet-records/status'),
-    'Audits': location.pathname.startsWith('/audit')
+    'Audit Logs': location.pathname.startsWith('/audit')
   });
 
   const toggleMenu = (name: string) => {

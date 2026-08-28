@@ -190,18 +190,22 @@ export class BatchSheetRecordService {
     const sysUser = { uid: user?.uid || "system", email: user?.email || "system@brims.com" };
     
     return await runTransaction(db, async (transaction) => {
+      const masterRef = doc(db, "batch_sheet_masters", masterId);
+      const masterDocSnap = await transaction.get(masterRef);
+      const masterDocData = masterDocSnap.exists() ? masterDocSnap.data() : masterData;
+
       const recordRef = doc(collection(db, "batch_sheet_records"));
       const timestamp = new Date().toISOString();
       
       const newRecord: any = {
         masterId,
-        masterSnapshot: masterData,
+        masterSnapshot: masterDocData || masterData,
         status: 'APPROVED' as RecordStatus,
         changeReason: "System auto-initialization of approved master template record",
         createdBy: sysUser.uid,
         createdAt: timestamp,
         updatedAt: timestamp,
-        branch: masterData.branch || "Masulkhana",
+        branch: masterDocData?.branch || masterData?.branch || "Masulkhana",
         approvedBy: sysUser.uid,
         approvedAt: timestamp,
         isLocked: true,
@@ -222,28 +226,16 @@ export class BatchSheetRecordService {
         transaction
       );
 
-      // Log approval in audit
-      await AuditService.logAction(
-        sysUser.uid,
-        sysUser.email,
-        "APPROVE_BATCH_SHEET_RECORD",
-        recordRef.id,
-        "BATCH_SHEET_RECORD",
-        null,
-        { status: 'APPROVED' },
-        "System auto-approval of initialized master template record",
-        transaction
-      );
-
-      // Update the master template status
-      const masterRef = doc(db, "batch_sheet_masters", masterId);
-      const nextVerStr = masterData.version || "1.0";
-      transaction.update(masterRef, {
-        status: 'APPROVED',
-        isLocked: true,
-        version: nextVerStr,
-        updatedAt: timestamp
-      });
+      // Update the master template status if it exists
+      if (masterDocSnap.exists()) {
+        const nextVerStr = masterDocData?.version || masterData?.version || "1.0";
+        transaction.update(masterRef, {
+          status: 'APPROVED',
+          isLocked: true,
+          version: nextVerStr,
+          updatedAt: timestamp
+        });
+      }
 
       return { id: recordRef.id, ...newRecord };
     });
