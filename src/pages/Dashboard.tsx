@@ -46,6 +46,7 @@ import { useBranch } from '../context/BranchContext';
 import { LoadingPage } from '../components/LoadingSpinner';
 import { getUserBaseRole } from '../types';
 import { DashboardMetricsSummary } from '../components/DashboardMetricsSummary';
+import CurrentMonthBatchRequestsChart from '../components/CurrentMonthBatchRequestsChart';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -95,32 +96,32 @@ export default function Dashboard() {
     };
   }, [loading]);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      setLoading(true);
-      try {
-        const [summaryRes, usageRes, recentRes, pendingRes, productsRes] = await Promise.all([
-          api.get("/dashboard/summary"),
-          api.get("/dashboard/product-usage"),
-          api.get("/dashboard/recent-activities"),
-          api.get("/batches?status=PENDING_REVIEW"),
-          api.get("/product-masters")
-        ]);
+  const fetchDashboardData = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const [summaryRes, usageRes, recentRes, pendingRes, productsRes] = await Promise.all([
+        api.get("/dashboard/summary"),
+        api.get("/dashboard/product-usage"),
+        api.get("/dashboard/recent-activities"),
+        api.get("/batches?status=PENDING_REVIEW"),
+        api.get("/product-masters")
+      ]);
 
-        if (summaryRes.data.success) setSummary(summaryRes.data.data);
-        if (usageRes.data.success) setProductUsage(usageRes.data.data);
-        if (recentRes.data.success) setRecentActivities(recentRes.data.data);
-        if (pendingRes.data.success) setPendingRequests(pendingRes.data.data);
-        if (productsRes.data.success) setProductMasters(productsRes.data.data);
-      } catch (error) {
-        console.error("Failed to fetch dashboard data", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
+      if (summaryRes.data.success) setSummary(summaryRes.data.data);
+      if (usageRes.data.success) setProductUsage(usageRes.data.data);
+      if (recentRes.data.success) setRecentActivities(recentRes.data.data);
+      if (pendingRes.data.success) setPendingRequests(pendingRes.data.data);
+      if (productsRes.data.success) setProductMasters(productsRes.data.data);
+    } catch (error) {
+      console.error("Failed to fetch dashboard data", error);
+    } finally {
+      setLoading(false);
+    }
   }, [selectedBranch]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   useEffect(() => {
     const fetchTrends = async () => {
@@ -384,9 +385,9 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div ref={containerRef} className="w-full h-[300px] mt-6 flex items-center justify-center">
+            <div ref={containerRef} className="w-full h-[300px] mt-6 flex items-center justify-center min-w-0 min-h-[300px] relative">
               {containerWidth && containerWidth > 0 ? (
-                <ResponsiveContainer width={containerWidth} height={300}>
+                <ResponsiveContainer width={containerWidth} height={300} minWidth={0} minHeight={300} debounce={50}>
                   <AreaChart data={processedTrends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="velocityGradient" x1="0" y1="0" x2="0" y2="1">
@@ -563,6 +564,12 @@ export default function Dashboard() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Current Month Batch Requests Visualization Section (Recharts) */}
+      <CurrentMonthBatchRequestsChart 
+        selectedBranch={selectedBranch} 
+        onRefreshParent={fetchDashboardData} 
+      />
 
       {/* Key Metrics Summary Component & 7-Day Operational Dynamics Visualizer */}
       <DashboardMetricsSummary 

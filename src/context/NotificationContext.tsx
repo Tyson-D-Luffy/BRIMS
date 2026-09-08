@@ -77,60 +77,79 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.error("Failed to load user subscriptions:", error);
     });
 
-    // Initialize WebSocket connection
+    // Initialize notification connection safely
+    let isCancelled = false;
     const initSocket = async () => {
-      const token = await auth.currentUser?.getIdToken();
-      
-      const socket = io({
-        auth: { token },
-        transports: ['polling']
-      });
-
-      socket.on('connect', () => {
-        setIsConnected(true);
-        console.log('Connected to notification server');
-        socket.emit('join-role', user.role);
-      });
-
-      socket.on('disconnect', () => {
-        setIsConnected(false);
-        console.log('Disconnected from notification server');
-      });
-
-      socket.on('notification', (notification: Notification) => {
-        // Filter incoming real-time notifications by the same rules
-        const isTargeted = 
-          (notification.targetType === 'USER' && notification.targetId === user.uid) ||
-          (notification.targetType === 'ROLE' && notification.targetId?.toUpperCase() === user.role?.toUpperCase()) ||
-          (notification.eventType && (
-            userSubscriptionsRef.current.includes(notification.eventType) ||
-            user.permissions?.includes(notification.eventType) ||
-            user.role?.toLowerCase() === 'admin'
-          ));
-
-        if (!isTargeted) return;
-
-        setRawNotifications(prev => {
-          // Prevent duplicates
-          if (prev.some(n => n.id === notification.id)) return prev;
-          
-          const updated = [notification, ...prev];
-          return updated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        });
+      try {
+        const token = await auth.currentUser?.getIdToken().catch(() => null);
+        if (isCancelled || !token) return;
         
-        toast(notification.title, { 
-          description: notification.message,
-          action: notification.link ? {
-            label: 'View',
-            onClick: () => window.location.href = notification.link!
-          } : undefined
+        const socket = io({
+          auth: { token },
+          transports: ['polling'],
+          autoConnect: true,
+          reconnection: true,
+          reconnectionAttempts: 5,
+          timeout: 10000
         });
-      });
 
-      socketRef.current = socket;
+        socket.on('connect_error', (err) => {
+          console.debug('Notification socket connection debug notice:', err?.message || err);
+        });
+
+        socket.on('connect', () => {
+          if (isCancelled) return;
+          setIsConnected(true);
+          console.log('Connected to notification server');
+          socket.emit('join-role', user.role);
+        });
+
+        socket.on('disconnect', () => {
+          if (isCancelled) return;
+          setIsConnected(false);
+          console.log('Disconnected from notification server');
+        });
+
+        socket.on('notification', (notification: Notification) => {
+          if (isCancelled) return;
+          // Filter incoming real-time notifications by the same rules
+          const isTargeted = 
+            (notification.targetType === 'USER' && notification.targetId === user.uid) ||
+            (notification.targetType === 'ROLE' && notification.targetId?.toUpperCase() === user.role?.toUpperCase()) ||
+            (notification.eventType && (
+              userSubscriptionsRef.current.includes(notification.eventType) ||
+              user.permissions?.includes(notification.eventType) ||
+              user.role?.toLowerCase() === 'admin'
+            ));
+
+          if (!isTargeted) return;
+
+          setRawNotifications(prev => {
+            // Prevent duplicates
+            if (prev.some(n => n.id === notification.id)) return prev;
+            
+            const updated = [notification, ...prev];
+            return updated.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          });
+          
+          toast(notification.title, { 
+            description: notification.message,
+            action: notification.link ? {
+              label: 'View',
+              onClick: () => window.location.href = notification.link!
+            } : undefined
+          });
+        });
+
+        socketRef.current = socket;
+      } catch (err) {
+        console.debug('Handled notification socket setup silently:', err);
+      }
     };
 
-    initSocket();
+    initSocket().catch((err) => {
+      console.debug('Suppressed socket init error:', err);
+    });
 
     // Query all the latest notifications so that subscription matches are completely checked
     const qAll = query(
@@ -145,6 +164,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     });
 
     return () => {
+      isCancelled = true;
       unsubSub();
       unsubAll();
       if (socketRef.current) {

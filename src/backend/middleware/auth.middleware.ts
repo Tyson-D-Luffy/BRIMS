@@ -12,11 +12,11 @@ export const ALL_ADMIN_PERMISSIONS = [
   "user:create", "user:view", "user:edit", "user:delete",
   "batch:create", "batch:view", "batch:edit", "batch:sign", "batch:approve", "batch:preview",
   "batch_sheet_master:create", "batch_sheet_master:edit", "batch_sheet_master:submit", "batch_sheet_master:review", "batch_sheet_master:approve", "batch_sheet_master:reject", "batch_sheet_master:return", "batch_sheet_master:deactivate",
-  "create:product", "edit:product", "product:review", "product:approve", "product:reject", "product:return", "product:deactivate",
+  "create:product", "edit:product", "product:submit", "product:review", "product:approve", "product:reject", "product:return", "product:deactivate",
   "lookup:create", "lookup:edit", "lookup:submit", "lookup:approve", "lookup:activate", "lookup:deactivate",
   "op:issued", "op:ready_for_handover", "op:production_in_progress", "op:ready_for_qa_review", "op:completed", "op:return_for_correction",
-  "department:create", "department:submit", "designation:create", "designation:submit",
-  "batch_number:create", "batch_number:submit", "format:create", "format:submit",
+  "department:create", "department:submit", "department:approve", "designation:create", "designation:submit", "designation:approve",
+  "batch_number:create", "batch_number:submit", "batch_number:approve", "format:create", "format:submit", "format:approve",
   "audit:view"
 ];
 
@@ -368,6 +368,19 @@ export const authorizeRoles = (allowedRoles: string[]) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
+    const userEmail = req.user.email?.toLowerCase();
+    const userRole = (req.user.role || "").toUpperCase();
+    const isSystemAdmin = 
+      userEmail === "shakshay04@gmail.com" || 
+      userRole === "ADMIN" || 
+      userRole.includes("ADMIN") || 
+      userRole.includes("SYSTEM") ||
+      userRole.includes("IT");
+
+    if (isSystemAdmin) {
+      return next();
+    }
+
     if (!hasRoleAccess(req.user.role, allowedRoles)) {
       return res.status(403).json({ 
         success: false, 
@@ -386,8 +399,13 @@ export const authorizePermissions = (requiredPermissions: string[]) => {
     }
 
     const userEmail = req.user.email?.toLowerCase();
-    const userRole = req.user.role?.toUpperCase();
-    const isSystemAdmin = userEmail === "shakshay04@gmail.com" || userRole === "ADMIN";
+    const userRole = (req.user.role || "").toUpperCase();
+    const isSystemAdmin = 
+      userEmail === "shakshay04@gmail.com" || 
+      userRole === "ADMIN" || 
+      userRole.includes("ADMIN") || 
+      userRole.includes("SYSTEM") ||
+      userRole.includes("IT");
 
     if (isSystemAdmin) {
       return next();

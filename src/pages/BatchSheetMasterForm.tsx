@@ -114,9 +114,16 @@ export default function BatchSheetMasterForm() {
           const master = response.data.data;
           setCurrentMaster(master);
           
-          if ((master.isLocked && master.status !== 'UNDER_UPDATE') || master.status === 'APPROVED') {
+          if ((master.isLocked && !['UNDER_UPDATE', 'DRAFT', 'REJECTED', 'RETURNED'].includes(master.status)) || master.status === 'APPROVED' || master.status === 'RETIRED' || master.status === 'UNDER_REVIEW' || master.status === 'PENDING_APPROVAL') {
             setIsLocked(true);
-            setLockReason(master.isLocked ? "LOCKED" : "APPROVED");
+            setLockReason(
+              master.status === 'APPROVED' ? "APPROVED" :
+              master.status === 'RETIRED' ? "RETIRED" :
+              master.status === 'UNDER_REVIEW' ? "UNDER_REVIEW" :
+              master.status === 'PENDING_APPROVAL' ? "PENDING_APPROVAL" : "LOCKED"
+            );
+          } else {
+            setIsLocked(false);
           }
 
           form.reset({

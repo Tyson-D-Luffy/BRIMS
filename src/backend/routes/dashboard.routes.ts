@@ -41,4 +41,10 @@ router.get("/recent-activities",
   DashboardController.getRecentActivities
 );
 
+router.get("/monthly-batch-requests", 
+  authenticateToken, 
+  authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"]), 
+  DashboardController.getMonthlyBatchRequests
+);
+
 export default router;

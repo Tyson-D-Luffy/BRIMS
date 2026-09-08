@@ -20,9 +20,24 @@ export class SocketService {
       }
 
       try {
-        const decodedToken = await adminAuth.verifyIdToken(token);
-        socket.data.user = decodedToken;
-        next();
+        try {
+          const decodedToken = await adminAuth.verifyIdToken(token);
+          socket.data.user = decodedToken;
+          return next();
+        } catch (adminErr) {
+          const jwtSecret = process.env.JWT_SECRET || "brims-super-secret-key-123";
+          const jwt = await import("jsonwebtoken");
+          const decoded = jwt.default.verify(token, jwtSecret) as any;
+          if (decoded && (decoded.uid || decoded.id || decoded.userId)) {
+            socket.data.user = {
+              uid: decoded.uid || decoded.id || decoded.userId,
+              email: decoded.email || decoded.userEmail || "user@brims.internal",
+              ...decoded
+            };
+            return next();
+          }
+          throw adminErr;
+        }
       } catch (err) {
         next(new Error("Authentication error: Invalid token"));
       }

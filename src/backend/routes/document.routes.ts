@@ -13,7 +13,7 @@ router.get("/batch/:id/pdf",
 
 router.get("/batch/:id/preview", 
   authenticateToken, 
-  authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER"]), 
+  authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"]), 
   DocumentController.previewBatch
 );
 

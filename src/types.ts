@@ -27,7 +27,14 @@ export interface User {
   role: UserRole;
   displayName?: string;
   designation?: string;
-   status?: 'active' | 'inactive' | 'locked';
+  designationId?: string;
+  designationName?: string;
+  designationPermissionProfileId?: string;
+  designationPermissionProfileVersion?: string;
+  permissionSource?: 'DESIGNATION_DEFAULT' | 'USER_OVERRIDE' | 'CUSTOM';
+  permissionOverrides?: { [permissionId: string]: boolean };
+  permissionOverrideReason?: string;
+  status?: 'active' | 'inactive' | 'locked';
   createdAt: string;
   employeeId?: string;
   username?: string;
@@ -52,7 +59,7 @@ export interface User {
   updatedAt?: string;
 }
 
-export type RecordStatus = 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'ARCHIVED' | 'RETURNED';
+export type RecordStatus = 'DRAFT' | 'UNDER_REVIEW' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'ARCHIVED' | 'RETURNED';
 
 export interface ReturnHistoryEntry {
   returnNo: number;
@@ -88,8 +95,16 @@ export interface BatchSheetRecord {
   changeReason: string;
   status: RecordStatus;
   createdBy: string;
+  reviewedBy?: string;
+  reviewedByEmail?: string;
+  reviewedByName?: string;
+  reviewedAt?: string;
+  reviewComments?: string;
   approvedBy?: string;
+  approvedByEmail?: string;
+  approvedByName?: string;
   approvedAt?: string;
+  approvalComments?: string;
   isLocked?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -223,6 +238,13 @@ export interface BatchSheetPrintHistoryEntry {
   userAgent?: string;
 }
 
+export type SheetHandoverStatus = 'PENDING_HANDOVER' | 'HANDOVER_INITIATED' | 'HANDED_OVER_TO_PRODUCTION';
+export type SheetProductionReceiptStatus = 'NOT_AVAILABLE' | 'AWAITING_PRODUCTION_RECEIPT' | 'RECEIVED_BY_PRODUCTION';
+export type SheetProductionStatus = 'PENDING' | 'IN_PROGRESS' | 'READY_FOR_QA_REVIEW' | 'COMPLETED';
+export type SheetQaReturnStatus = 'NOT_SENT' | 'READY_FOR_QA_REVIEW' | 'SENT_FOR_QA_REVIEW';
+export type SheetQaReceiptStatus = 'NOT_AVAILABLE' | 'AWAITING_QA_RECEIPT' | 'RECEIVED_BY_QA';
+export type SheetQaReviewStatus = 'PENDING_RECEIPT' | 'RECEIVED' | 'UNDER_QA_REVIEW' | 'QA_REVIEW_COMPLETED';
+
 export interface BatchSheetItem {
   id: string;
   batchNumber: string;
@@ -255,6 +277,56 @@ export interface BatchSheetItem {
   totalPages?: number;
   history: BatchSheetPrintHistoryEntry[];
   printJobs?: PrintJob[];
+
+  // Individual Handover to Production fields
+  handoverStatus?: SheetHandoverStatus;
+  handedOverBy?: string | null;
+  handedOverByName?: string | null;
+  handedOverByRole?: string | null;
+  handedOverByEmployeeId?: string | null;
+  handedOverAt?: string | null;
+  handoverSignatureId?: string | null;
+
+  // Individual Production Receipt fields
+  productionReceiptStatus?: SheetProductionReceiptStatus;
+  receivedByProduction?: string | null;
+  productionReceivedByName?: string | null;
+  productionReceivedByRole?: string | null;
+  productionReceivedByEmployeeId?: string | null;
+  productionReceivedAt?: string | null;
+  productionReceiptSignatureId?: string | null;
+  productionStatus?: SheetProductionStatus;
+
+  // Individual QA Return / Send for QA Review fields
+  qaReturnStatus?: SheetQaReturnStatus;
+  sentForQaReviewBy?: string | null;
+  sentForQaReviewByName?: string | null;
+  sentForQaReviewByRole?: string | null;
+  sentForQaReviewByEmployeeId?: string | null;
+  sentForQaReviewAt?: string | null;
+  sentForQaReviewSignatureId?: string | null;
+
+  // Individual QA Receipt fields
+  qaReceiptStatus?: SheetQaReceiptStatus;
+  receivedByQa?: string | null;
+  qaReceivedByName?: string | null;
+  qaReceivedByRole?: string | null;
+  qaReceivedByEmployeeId?: string | null;
+  qaReceivedAt?: string | null;
+  qaReceiptSignatureId?: string | null;
+
+  // Individual QA Review Completion fields
+  qaReviewStatus?: SheetQaReviewStatus;
+  qaReviewedBy?: string | null;
+  qaReviewedByName?: string | null;
+  qaReviewedByRole?: string | null;
+  qaReviewedByEmployeeId?: string | null;
+  qaReviewedAt?: string | null;
+  qaReviewSignatureId?: string | null;
+
+  // Custody tracking
+  currentCustody?: string;
+  currentOperationalState?: string;
 }
 
 export interface BatchIssuance {
@@ -304,6 +376,26 @@ export interface BatchIssuance {
   completedByName?: string;
   completedByRole?: string;
   completedByEmployeeId?: string;
+
+  // Individual Handover & Review parent state tracking
+  handoverSubStatus?: 'NOT_STARTED' | 'HANDOVER_IN_PROGRESS' | 'HANDOVER_COMPLETED';
+  qaReviewSubStatus?: 'NOT_STARTED' | 'QA_REVIEW_IN_PROGRESS' | 'QA_REVIEW_COMPLETED';
+  handoverProgress?: {
+    total: number;
+    handedOverCount: number;
+    productionReceivedCount: number;
+    pendingHandoverCount: number;
+    awaitingProductionReceiptCount: number;
+    percent: number;
+  };
+  qaReviewProgress?: {
+    total: number;
+    sentForReviewCount: number;
+    qaReceivedCount: number;
+    reviewedCount: number;
+    stillInProductionCount: number;
+    percent: number;
+  };
 }
 
 export interface AuditLog {
@@ -373,7 +465,7 @@ export interface ProductMaster {
   returnHistory?: ReturnHistoryEntry[];
 }
 
-export type MasterStatus = 'DRAFT' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'RETIRED' | 'UNDER_UPDATE' | 'RETURNED';
+export type MasterStatus = 'DRAFT' | 'UNDER_REVIEW' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'RETIRED' | 'UNDER_UPDATE' | 'RETURNED';
 
 export interface BatchSheetMaster {
   id: string;
@@ -391,6 +483,16 @@ export interface BatchSheetMaster {
   createdAt: string;
   updatedBy: string;
   updatedAt: string;
+  reviewedBy?: string;
+  reviewedByEmail?: string;
+  reviewedByName?: string;
+  reviewedAt?: string;
+  reviewComments?: string;
+  approvedBy?: string;
+  approvedByEmail?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+  approvalComments?: string;
   changeReason?: string;
   isLocked?: boolean;
   isDeleted?: boolean;
@@ -472,3 +574,27 @@ export interface DesignationApprovalTimeline {
   comments: string;
   reason: string;
 }
+
+export interface DesignationPermissionProfile {
+  id: string;
+  profileId: string;
+  designationName: string;
+  designationId?: string;
+  departmentName?: string;
+  permissions: string[];
+  version: string;
+  status: 'Active' | 'Draft' | 'Obsolete';
+  effectiveDate: string;
+  approvedBy: string;
+  approvedAt?: string;
+  updatedAt?: string;
+  description?: string;
+  history?: {
+    version: string;
+    permissions: string[];
+    changedBy: string;
+    changedAt: string;
+    reason: string;
+  }[];
+}
+

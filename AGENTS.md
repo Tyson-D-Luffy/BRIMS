@@ -45,7 +45,7 @@ Access control in BRIMS is controlled via both **Base Roles** and **Granular Sys
 - `op:return_for_correction` - Return Batch Sheet for Correction (`RETURNED`)
 
 #### C. Product Master & Batch Sheet Master Rights
-- `create:product`, `edit:product`, `product:review`, `product:approve`, `product:reject`, `product:return`, `product:deactivate`
+- `create:product`, `edit:product`, `product:submit` (Submit for GAMP Review button — assigned strictly to QA Chemist), `product:review`, `product:approve`, `product:reject`, `product:return`, `product:deactivate`
 - `batch_sheet_master:create`, `batch_sheet_master:edit`, `batch_sheet_master:submit`, `batch_sheet_master:review`, `batch_sheet_master:approve`, `batch_sheet_master:reject`, `batch_sheet_master:return`, `batch_sheet_master:deactivate`
 
 ---

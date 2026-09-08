@@ -21,7 +21,8 @@ import {
   AlertCircle,
   ClipboardList,
   Printer,
-  RefreshCw
+  RefreshCw,
+  PackageCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -53,6 +54,7 @@ import { ReturnDialog, ReturnDialogConfirmPayload } from '../components/ReturnDi
 import { ReturnBadge } from '../components/ReturnBadge';
 import { ReturnHistorySection } from '../components/ReturnHistorySection';
 import { SequentialPrintManager } from '../components/SequentialPrintManager';
+import { BatchSheetCustodyManager } from '../components/BatchSheetCustodyManager';
 
 export default function BatchDetail() {
   const { id } = useParams<{ id: string }>();
@@ -294,14 +296,32 @@ export default function BatchDetail() {
     } else if (signatureAction === 'FILLED') {
       setUpdatingStatus(true);
       try {
-        const res = await api.put(`/batches/${id}/status`, {
-          status: 'READY_FOR_QA_REVIEW',
-          changeReason: 'Batch sheet completed by production and sent back for QA review.',
-          password
-        });
-        if (res.data.success) {
-          toast.success('Batch sheet status updated to Ready for QA Review!');
-          await fetchData();
+        const eligibleSheets = (batch?.batchSheets || []).filter((s: any) => 
+          (s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' || s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') &&
+          s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW' &&
+          s.qaReviewStatus !== 'QA_REVIEW_COMPLETED'
+        );
+
+        if (batch?.batchSheets && batch.batchSheets.length > 0 && eligibleSheets.length > 0) {
+          const res = await api.post(`/batches/${id}/sheets/send-qa-review`, {
+            sheetIds: eligibleSheets.map((s: any) => s.id),
+            changeReason: 'Handed-over batch sheet(s) completed by production and sent back for QA review.',
+            password
+          });
+          if (res.data.success) {
+            toast.success(`Handed-over batch sheet(s) (${eligibleSheets.length}) sent for QA Review!`);
+            await fetchData();
+          }
+        } else {
+          const res = await api.put(`/batches/${id}/status`, {
+            status: 'READY_FOR_QA_REVIEW',
+            changeReason: 'Batch sheet completed by production and sent back for QA review.',
+            password
+          });
+          if (res.data.success) {
+            toast.success('Batch sheet status updated to Ready for QA Review!');
+            await fetchData();
+          }
         }
       } catch (err: any) {
         console.error(err);
@@ -313,14 +333,43 @@ export default function BatchDetail() {
     } else if (signatureAction === 'REVIEWED') {
       setUpdatingStatus(true);
       try {
-        const res = await api.put(`/batches/${id}/status`, {
-          status: 'COMPLETED',
-          changeReason: 'Batch sheet reviewed and received by QA. Issuance completed.',
-          password
-        });
-        if (res.data.success) {
-          toast.success('Batch sheet process completed!');
-          await fetchData();
+        const sheetsAwaitingReceipt = (batch?.batchSheets || []).filter((s: any) => 
+          s.qaReturnStatus === 'SENT_FOR_QA_REVIEW' && s.qaReceiptStatus !== 'RECEIVED_BY_QA'
+        );
+        const sheetsUnderReview = (batch?.batchSheets || []).filter((s: any) => 
+          s.qaReceiptStatus === 'RECEIVED_BY_QA' && s.qaReviewStatus !== 'QA_REVIEW_COMPLETED'
+        );
+
+        if (sheetsAwaitingReceipt.length > 0) {
+          const res = await api.post(`/batches/${id}/sheets/qa-receive`, {
+            sheetIds: sheetsAwaitingReceipt.map((s: any) => s.id),
+            changeReason: 'QA Department physical and digital receipt of batch sheets.',
+            password
+          });
+          if (res.data.success) {
+            toast.success(`QA acknowledged physical receipt of ${sheetsAwaitingReceipt.length} batch sheet(s)!`);
+            await fetchData();
+          }
+        } else if (sheetsUnderReview.length > 0) {
+          const res = await api.post(`/batches/${id}/sheets/complete-qa-review`, {
+            sheetIds: sheetsUnderReview.map((s: any) => s.id),
+            changeReason: 'QA completed review and accepted batch sheets.',
+            password
+          });
+          if (res.data.success) {
+            toast.success(`QA successfully completed review of ${sheetsUnderReview.length} batch sheet(s)!`);
+            await fetchData();
+          }
+        } else {
+          const res = await api.put(`/batches/${id}/status`, {
+            status: 'COMPLETED',
+            changeReason: 'Batch sheet reviewed and received by QA. Issuance completed.',
+            password
+          });
+          if (res.data.success) {
+            toast.success('Batch sheet process completed!');
+            await fetchData();
+          }
         }
       } catch (err: any) {
         console.error(err);
@@ -608,6 +657,22 @@ export default function BatchDetail() {
             </Button>
           )}
 
+          {['ISSUED', 'IN_PROGRESS', 'READY_FOR_PRODUCTION_HANDOVER', 'HANDED_OVER', 'PRODUCTION_IN_PROGRESS', 'READY_FOR_QA_REVIEW', 'COMPLETED'].includes(batch.status) && (
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                const el = document.getElementById('batch-sheet-custody-section');
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth' });
+                }
+              }}
+              className="rounded-full px-5 h-12 border-slate-200 bg-white text-slate-700 hover:bg-slate-50 font-bold shadow-sm"
+            >
+              <PackageCheck className="w-4 h-4 mr-2 text-indigo-600" />
+              Sheet Custody ({batch.batchSheets?.filter(s => s.qaReviewStatus === 'QA_REVIEW_COMPLETED').length || 0}/{(batch.batchSheets || []).length || 1})
+            </Button>
+          )}
+
           {batch.status === 'ISSUED' && (user?.permissions?.includes('batch:print') || user?.permissions?.includes('op:issued') || getUserBaseRole(user) === 'ADMIN') && (
             <Button 
               variant="outline" 
@@ -657,7 +722,9 @@ export default function BatchDetail() {
             </Button>
           )}
 
-          {batch.status === 'PRODUCTION_IN_PROGRESS' && (user?.permissions?.includes('batch:sign') || user?.permissions?.includes('batch:edit') || user?.permissions?.includes('op:ready_for_qa_review') || user?.permissions?.includes('op:production_in_progress') || getUserBaseRole(user) === 'ADMIN' || getUserBaseRole(user) === 'PRODUCTION_MANAGER' || getUserBaseRole(user) === 'OPERATOR') && (
+          {((batch.status === 'PRODUCTION_IN_PROGRESS') ||
+            (['READY_FOR_PRODUCTION_HANDOVER', 'HANDED_OVER'].includes(batch.status) && (batch.batchSheets || []).some(s => (s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' || s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') && s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW' && s.qaReviewStatus !== 'QA_REVIEW_COMPLETED'))) && 
+           (user?.permissions?.includes('batch:sign') || user?.permissions?.includes('batch:edit') || user?.permissions?.includes('op:ready_for_qa_review') || user?.permissions?.includes('op:production_in_progress') || getUserBaseRole(user) === 'ADMIN' || getUserBaseRole(user) === 'PRODUCTION_MANAGER' || getUserBaseRole(user) === 'OPERATOR') && (
             <Button 
               onClick={handleBatchSheetFilled}
               disabled={updatingStatus}
@@ -672,7 +739,8 @@ export default function BatchDetail() {
             </Button>
           )}
 
-          {batch.status === 'READY_FOR_QA_REVIEW' && (
+          {((batch.status === 'READY_FOR_QA_REVIEW') ||
+            (['READY_FOR_PRODUCTION_HANDOVER', 'HANDED_OVER', 'PRODUCTION_IN_PROGRESS'].includes(batch.status) && (batch.batchSheets || []).some(s => s.qaReturnStatus === 'SENT_FOR_QA_REVIEW' && s.qaReviewStatus !== 'QA_REVIEW_COMPLETED'))) && (
             <>
               {(user?.permissions?.includes('batch:review') || user?.permissions?.includes('batch:approve') || user?.permissions?.includes('op:completed') || getUserBaseRole(user) === 'ADMIN' || getUserBaseRole(user) === 'QA') && (
                 <Button 
@@ -829,6 +897,20 @@ export default function BatchDetail() {
                 batch={batch}
                 productMaster={productMaster}
                 onBatchUpdated={fetchData}
+              />
+            </div>
+          )}
+
+          {/* Individual Batch Sheet Custody & Operational Handover Section */}
+          {['ISSUED', 'IN_PROGRESS', 'READY_FOR_PRODUCTION_HANDOVER', 'HANDED_OVER', 'PRODUCTION_IN_PROGRESS', 'READY_FOR_QA_REVIEW', 'COMPLETED', 'RETURNED'].includes(batch.status) && (
+            <div id="batch-sheet-custody-section">
+              <BatchSheetCustodyManager
+                batch={batch}
+                productMaster={productMaster}
+                onBatchUpdated={fetchData}
+                onPreviewSheet={(sheet) => {
+                  handlePreviewPDF();
+                }}
               />
             </div>
           )}

@@ -19,6 +19,7 @@ const PERMISSIONS = [
   { id: "audit:view", name: "View Audit Trail", description: "Allow viewing system audit logs" },
   { id: "create:product", name: "Create Product Master", description: "Allow creating product master drafts" },
   { id: "edit:product", name: "Edit Product Master", description: "Allow editing product master drafts" },
+  { id: "product:submit", name: "Submit Product Master (GAMP Review)", description: "Allow submitting product master drafts for GAMP review" },
   { id: "product:review", name: "Review Product Master", description: "Allow reviewing product master drafts" },
   { id: "product:approve", name: "Approve Product Master", description: "Allow approving product master drafts" },
   { id: "product:reject", name: "Reject Product Master", description: "Allow rejecting product master drafts" },

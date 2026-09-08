@@ -2,6 +2,7 @@ import { db, ensureAuth } from "../config/firebase-client.ts";
 import { collection, doc, getDoc, getDocs, query, where, orderBy, setDoc, updateDoc, runTransaction, limit as firestoreLimit } from "firebase/firestore";
 import { adminDb, checkAdminHealth } from "../config/firebase-admin.ts";
 import { AuditService } from "./audit.service.ts";
+import { SignatureService } from "./signature.service.ts";
 import { BatchSheetRecordService } from "./batchSheetRecord.service.ts";
 import { MasterStatus } from "../../types.ts";
 
@@ -240,7 +241,11 @@ export class BatchSheetMasterService {
       // 3. In-memory filtering
       if (name) {
         const searchLower = name.toLowerCase();
-        masters = masters.filter(m => m.masterName && m.masterName.toLowerCase().includes(searchLower));
+        masters = masters.filter(m => 
+          (m.masterName && m.masterName.toLowerCase().includes(searchLower)) ||
+          (m.documentNumber && m.documentNumber.toLowerCase().includes(searchLower)) ||
+          (m.batchNumberSeries && m.batchNumberSeries.toLowerCase().includes(searchLower))
+        );
       }
       if (status) masters = masters.filter(m => m.status === status);
       if (stage) masters = masters.filter(m => m.stage === stage);
@@ -320,7 +325,7 @@ export class BatchSheetMasterService {
       
       await BatchSheetMasterService.checkDuplicate(newMasterName, newDesc, newDocNum, id, newBatchSeries);
 
-      if (currentData?.isLocked === true && currentData?.status !== "UNDER_UPDATE") {
+      if (currentData?.isLocked === true && !['UNDER_UPDATE', 'DRAFT', 'REJECTED', 'RETURNED'].includes(currentData?.status)) {
         throw new Error("This master is LOCKED. Modifications are prohibited.");
       }
 
@@ -362,7 +367,9 @@ export class BatchSheetMasterService {
       if (!masterDoc.exists() || masterDoc.data()?.isDeleted) throw new Error("Master not found");
 
       const currentData = masterDoc.data();
-      if (currentData.status !== 'APPROVED') throw new Error("Only approved masters can be requested for update");
+      if (!['APPROVED', 'REJECTED', 'RETURNED', 'UNDER_UPDATE'].includes(currentData.status)) {
+        throw new Error("Only approved, rejected, or returned masters can be requested for update");
+      }
 
       const updateData = {
         status: "UNDER_UPDATE" as MasterStatus,
@@ -379,10 +386,10 @@ export class BatchSheetMasterService {
         actionType: "REQUEST_UPDATE_BATCH_SHEET_MASTER",
         entityType: "BATCH_SHEET_MASTER",
         entityId: id,
-        meaning: signatureInfo.meaning,
+        meaning: signatureInfo?.meaning || "I certify that I am requesting an update to this master record. This action will be logged and requires justification.",
         signedAt: new Date().toISOString(),
-        ipAddress: signatureInfo.ipAddress,
-        userAgent: signatureInfo.userAgent,
+        ipAddress: signatureInfo?.ipAddress || "unknown",
+        userAgent: signatureInfo?.userAgent || "unknown",
         createdAt: new Date().toISOString(),
       };
       transaction.set(signatureRef, signatureData);
@@ -390,7 +397,7 @@ export class BatchSheetMasterService {
       await AuditService.logAction(
         user.uid, user.email, "REQUEST_UPDATE_BATCH_SHEET_MASTER", id, "BATCH_SHEET_MASTER",
         { status: currentData.status, isLocked: currentData.isLocked }, updateData,
-        changeReason, transaction, signatureRef.id, signatureInfo.meaning, signatureInfo.ipAddress, signatureInfo.userAgent
+        changeReason, transaction, signatureRef.id, signatureData.meaning, signatureInfo?.ipAddress, signatureInfo?.userAgent
       );
 
       return { id, ...updateData };
@@ -407,7 +414,7 @@ export class BatchSheetMasterService {
       if (!masterDoc.exists() || masterDoc.data()?.isDeleted) throw new Error("Master not found");
 
       const masterData = masterDoc.data() || {};
-      if (!['DRAFT', 'UNDER_UPDATE', 'REJECTED'].includes(masterData.status)) {
+      if (!['DRAFT', 'UNDER_UPDATE', 'REJECTED', 'RETURNED'].includes(masterData.status)) {
         throw new Error("Invalid status for submission");
       }
 
@@ -443,6 +450,76 @@ export class BatchSheetMasterService {
       );
 
       return { id, recordId: record.id };
+    });
+  }
+
+  static async reviewMaster(id: string, comments: string, user: any, signatureInfo?: any) {
+    await ensureAuth();
+    return await runTransaction(db, async (transaction) => {
+      const masterRef = doc(db, "batch_sheet_masters", id);
+      const masterDoc = await transaction.get(masterRef);
+      if (!masterDoc.exists() || masterDoc.data()?.isDeleted) throw new Error("Master not found");
+
+      const masterData = masterDoc.data() || {};
+      if (masterData.status !== 'UNDER_REVIEW') {
+        throw new Error(`Only masters in UNDER_REVIEW status can be reviewed. Current status: ${masterData.status}`);
+      }
+
+      // Segregation of duties
+      if (masterData.createdBy === user.uid && user.role !== 'ADMIN') {
+        throw new Error("Compliance Duty Segregation (21 CFR Part 11): The author cannot perform the Review step.");
+      }
+
+      const reviewerName = user.displayName || user.username || user.email?.split('@')[0] || user.email || 'QA Reviewer';
+      const reviewTimestamp = new Date().toISOString();
+      const reviewCommentsVal = comments || "Reviewed and recommended for approval";
+
+      const updateData: any = {
+        status: "PENDING_APPROVAL" as MasterStatus,
+        reviewedBy: user.uid,
+        reviewedByEmail: user.email || '',
+        reviewedByName: reviewerName,
+        reviewedAt: reviewTimestamp,
+        reviewComments: reviewCommentsVal,
+        updatedBy: user.uid,
+        updatedAt: reviewTimestamp,
+      };
+
+      transaction.update(masterRef, updateData);
+
+      let signatureId: string | undefined;
+      if (signatureInfo) {
+        const sigResult = await SignatureService.signAction(
+          user.uid,
+          user.email,
+          "REVIEW_MASTER",
+          "BATCH_SHEET_MASTER",
+          id,
+          signatureInfo.meaning || "I have reviewed this master record and recommend it for approval",
+          signatureInfo.ipAddress,
+          signatureInfo.userAgent,
+          transaction
+        );
+        signatureId = sigResult.id;
+      }
+
+      await AuditService.logAction(
+        user.uid,
+        user.email,
+        "REVIEW_BATCH_SHEET_MASTER",
+        id,
+        "BATCH_SHEET_MASTER",
+        { status: masterData.status },
+        updateData,
+        reviewCommentsVal,
+        transaction,
+        signatureId,
+        signatureInfo?.meaning || "I have reviewed this master record and recommend it for approval",
+        signatureInfo?.ipAddress,
+        signatureInfo?.userAgent
+      );
+
+      return { id, ...updateData };
     });
   }
 

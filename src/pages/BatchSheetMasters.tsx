@@ -25,6 +25,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { HighlightText } from '../components/HighlightText';
 import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
@@ -113,7 +114,20 @@ export default function BatchSheetMasters() {
   }, [searchQuery, statusFilter]);
 
   const sortedAndFilteredMasters = useMemo(() => {
-    return [...masters].sort((a, b) => {
+    const q = searchQuery.toLowerCase().trim();
+    const filtered = masters.filter(m => {
+      if (!q) return true;
+      return (
+        (m.masterName && m.masterName.toLowerCase().includes(q)) ||
+        (m.documentNumber && m.documentNumber.toLowerCase().includes(q)) ||
+        (m.stage && m.stage.toLowerCase().includes(q)) ||
+        (m.type && m.type.toLowerCase().includes(q)) ||
+        (m.batchNumberSeries && m.batchNumberSeries.toLowerCase().includes(q)) ||
+        (m.product?.title && m.product.title.toLowerCase().includes(q))
+      );
+    });
+
+    return [...filtered].sort((a, b) => {
       if (sortBy === 'a-z') {
         return (a.masterName || '').localeCompare(b.masterName || '');
       }
@@ -126,12 +140,14 @@ export default function BatchSheetMasters() {
       // default 'latest'
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [masters, sortBy]);
+  }, [masters, sortBy, searchQuery]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'APPROVED': return 'bg-emerald-500/10 text-emerald-600 border-emerald-200 ring-1 ring-inset ring-emerald-600/20';
+      case 'PENDING_APPROVAL': return 'bg-indigo-500/10 text-indigo-600 border-indigo-200 ring-1 ring-inset ring-indigo-600/20';
       case 'UNDER_REVIEW': return 'bg-amber-500/10 text-amber-600 border-amber-200 ring-1 ring-inset ring-amber-600/20';
+      case 'RETURNED': return 'bg-amber-500/10 text-amber-600 border-amber-200 ring-1 ring-inset ring-amber-600/20';
       case 'DRAFT': return 'bg-slate-500/10 text-slate-600 border-slate-200 ring-1 ring-inset ring-slate-600/20';
       case 'REJECTED': return 'bg-rose-500/10 text-rose-600 border-rose-200 ring-1 ring-inset ring-rose-600/20';
       case 'RETIRED': return 'bg-slate-500/10 text-slate-400 border-slate-200 ring-1 ring-inset ring-slate-400/20';
@@ -255,6 +271,7 @@ export default function BatchSheetMasters() {
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
                 <SelectItem value="UNDER_REVIEW">Under Review</SelectItem>
+                <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
                 <SelectItem value="APPROVED">Approved</SelectItem>
                 <SelectItem value="REJECTED">Rejected</SelectItem>
                 <SelectItem value="RETIRED">Retired</SelectItem>
@@ -379,22 +396,28 @@ export default function BatchSheetMasters() {
                     </div>
 
                     <h3 className="text-xl font-bold text-slate-900 mb-1 group-hover:text-indigo-600 transition-colors">
-                      {master.masterName}
+                      <HighlightText text={master.masterName} search={searchQuery} />
                     </h3>
                     <div className="flex items-center gap-2 mb-4">
                       <span className="text-xs text-slate-500 font-mono">Ver {master.version || '1.0'}</span>
                       <span className="w-1 h-1 rounded-full bg-slate-300" />
-                      <span className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">{master.product?.title || 'Unknown Product'}</span>
+                      <span className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">
+                        <HighlightText text={master.product?.title || 'Unknown Product'} search={searchQuery} />
+                      </span>
                     </div>
 
                     <div className="space-y-3 mb-6 flex-1">
                       <div className="flex items-center text-sm text-slate-600">
                         <FileText className="w-4 h-4 mr-2 text-slate-400" />
-                        <span className="font-mono text-xs">{master.documentNumber || 'No Doc Number'}</span>
+                        <span className="font-mono text-xs">
+                          <HighlightText text={master.documentNumber || 'No Doc Number'} search={searchQuery} />
+                        </span>
                       </div>
                       <div className="flex items-center text-sm text-slate-600">
                         <Clock className="w-4 h-4 mr-2 text-slate-400" />
-                        <span>{master.stage || 'N/A'} / {master.type || 'N/A'}</span>
+                        <span>
+                          <HighlightText text={master.stage || 'N/A'} search={searchQuery} /> / <HighlightText text={master.type || 'N/A'} search={searchQuery} />
+                        </span>
                       </div>
                     </div>
 
@@ -448,7 +471,7 @@ export default function BatchSheetMasters() {
                         className="hover:bg-slate-50/80 transition-colors group"
                       >
                         <td className="py-4 px-4 font-bold text-slate-900 group-hover:text-indigo-600 transition-colors cursor-pointer" onClick={() => navigate(`/batch-sheet-masters/${master.id}`)}>
-                          {master.masterName}
+                          <HighlightText text={master.masterName} search={searchQuery} />
                         </td>
                         <td className="py-4 px-4">
                           <Badge className={cn("rounded-full px-2.5 py-0.5 border text-[10px] shrink-0 inline-flex items-center gap-1", getStatusColor(master.status))}>
@@ -457,19 +480,19 @@ export default function BatchSheetMasters() {
                           </Badge>
                         </td>
                         <td className="py-4 px-4 font-medium text-slate-700">
-                          {master.product?.title || 'N/A'}
+                          <HighlightText text={master.product?.title || 'N/A'} search={searchQuery} />
                         </td>
                         <td className="py-4 px-4 text-slate-600">
-                          {master.stage || 'N/A'}
+                          <HighlightText text={master.stage || 'N/A'} search={searchQuery} />
                         </td>
                         <td className="py-4 px-4 text-slate-600">
-                          {master.type || master.stage || 'N/A'}
+                          <HighlightText text={master.type || master.stage || 'N/A'} search={searchQuery} />
                         </td>
                         <td className="py-4 px-4 font-mono text-xs text-slate-600">
-                          {master.documentNumber || 'N/A'}
+                          <HighlightText text={master.documentNumber || 'N/A'} search={searchQuery} />
                         </td>
                         <td className="py-4 px-4 font-mono text-xs text-indigo-600 font-semibold">
-                          {master.batchNumberSeries || master.product?.batchNumberSeries || 'N/A'}
+                          <HighlightText text={master.batchNumberSeries || master.product?.batchNumberSeries || 'N/A'} search={searchQuery} />
                         </td>
                         <td className="py-4 px-4 font-mono text-xs text-slate-500">
                           v{master.version || '1.0'}

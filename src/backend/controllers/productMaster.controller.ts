@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { ProductMasterService } from "../services/productMaster.service.ts";
 import { AuthRequest } from "../middleware/auth.middleware.ts";
+import { hasBranchAccess } from "../middleware/branch.middleware.ts";
 
 export class ProductMasterController {
   static async create(req: AuthRequest, res: Response) {
@@ -47,7 +48,7 @@ export class ProductMasterController {
   static async getById(req: AuthRequest, res: Response) {
     try {
       const product = await ProductMasterService.getProductById(req.params.id);
-      if (product && (product as any).branch && (product as any).branch !== (req as any).selectedBranch) {
+      if (product && !hasBranchAccess(req, (product as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       res.json({
@@ -62,7 +63,7 @@ export class ProductMasterController {
   static async update(req: AuthRequest, res: Response) {
     try {
       const productObj = await ProductMasterService.getProductById(req.params.id);
-      if (productObj && (productObj as any).branch && (productObj as any).branch !== (req as any).selectedBranch) {
+      if (productObj && !hasBranchAccess(req, (productObj as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const product = await ProductMasterService.updateProduct(req.params.id, req.body, req.user, req.metadata);
@@ -86,7 +87,7 @@ export class ProductMasterController {
   static async delete(req: AuthRequest, res: Response) {
     try {
       const productObj = await ProductMasterService.getProductById(req.params.id);
-      if (productObj && (productObj as any).branch && (productObj as any).branch !== (req as any).selectedBranch) {
+      if (productObj && !hasBranchAccess(req, (productObj as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const changeReason = req.body?.changeReason || req.query?.changeReason;

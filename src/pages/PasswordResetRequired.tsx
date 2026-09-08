@@ -71,12 +71,19 @@ export default function PasswordResetRequiredPage() {
       <div className="w-full max-w-lg space-y-4">
         
         {/* Top Branding / Logo */}
-        <div className="text-center space-y-1 mb-2">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[#FF6321]/10 text-[#FF6321] mb-2">
-            <KeyRound className="h-6 w-6" />
+        <div className="text-center space-y-2 mb-4 flex flex-col items-center">
+          <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-800 border border-slate-700 shadow-xl flex items-center justify-center">
+            <img 
+              src="/brims_logo.jpg" 
+              alt="BRIMS Logo" 
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
           </div>
-          <h2 className="text-3xl font-bold tracking-tight text-white font-sans">BRIMS Portal</h2>
-          <p className="text-sm text-slate-400 font-sans">Batch Record Information Management System</p>
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-white font-sans">BRIMS Portal</h2>
+            <p className="text-xs text-slate-400 font-sans">Batch Record Issuance Management System</p>
+          </div>
         </div>
 
         <Card className="border-none shadow-2xl rounded-3xl overflow-hidden bg-slate-950 text-white">

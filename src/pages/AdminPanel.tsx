@@ -29,7 +29,9 @@ import {
   Eye,
   EyeOff,
   CheckSquare,
-  Square
+  Square,
+  RotateCcw,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
@@ -81,6 +83,8 @@ import { User, UserRole } from '../types';
 import api from '../services/api';
 import { toast } from 'sonner';
 import { LoadingPage } from '../components/LoadingSpinner';
+import { DesignationProfilesManager } from '../components/admin/DesignationProfilesManager';
+import { getDefaultPermissionsForDesignation } from '../constants/designationProfiles';
 
 // DEPARTMENTS list has been retired in favor of dynamic lookup of active master departments
 
@@ -89,6 +93,7 @@ import { LoadingPage } from '../components/LoadingSpinner';
 const PERMISSIONS_LIST = [
   { id: "create:product", name: "Create Product Master", category: "Product Master" },
   { id: "edit:product", name: "Edit Product Master", category: "Product Master" },
+  { id: "product:submit", name: "Submit Product Master (GAMP Review)", category: "Product Master", description: "Submit drafted or returned Product Master records for GAMP review." },
   { id: "product:review", name: "Review Product Master", category: "Product Master", derivedReturnInfo: "✓ Includes derived authority to Return record to Creator (Draft)" },
   { id: "product:approve", name: "Approve Product Master", category: "Product Master", derivedReturnInfo: "✓ Includes derived authority to Return record to Reviewer / Creator" },
   { id: "batch:create", name: "Create New Batch Request", category: "Batch Issuance" },
@@ -196,6 +201,9 @@ export default function AdminPanel() {
     mfaEnabled: false,
     role: 'Viewer' as any,
     permissions: ['batch:view'] as string[],
+    permissionSource: 'DESIGNATION_DEFAULT' as 'DESIGNATION_DEFAULT' | 'USER_OVERRIDE',
+    designationPermissionProfileId: '',
+    designationPermissionProfileVersion: '',
     defaultBranch: 'Masulkhana' as 'Masulkhana' | 'Baddi',
     allowedBranches: ['Masulkhana'] as string[],
     multiBranchAccess: false,
@@ -214,37 +222,50 @@ export default function AdminPanel() {
   const [editConfirmPassword, setEditConfirmPassword] = useState('');
 
   const getPermissionPresetForRole = (roleName: string) => {
-    const normalized = (roleName || "").toUpperCase();
-    if (normalized.includes('ADMIN') || normalized.includes('SYSTEM') || normalized.includes('IT')) {
-      return PERMISSIONS_LIST.map(p => p.id);
-    }
-    if (normalized.includes('QA') || normalized.includes('QC') || normalized.includes('QUALITY') || normalized.includes('CONTROL') || normalized.includes('AUDIT')) {
-      return ["batch:view", "batch:review", "batch:approve", "batch:preview", "audit:view", "product:review", "product:approve", "product:reject", "product:return", "product:deactivate", "batch_sheet_master:review", "batch_sheet_master:approve", "batch_sheet_master:reject", "batch_sheet_master:return", "batch_sheet_master:deactivate", "department:submit", "department:approve", "designation:submit", "designation:approve", "batch_number:approve", "format:approve", "lookup:approve", "op:issued", "op:ready_for_handover", "op:completed", "op:return_for_correction"];
-    }
-    if (normalized.includes('PRODUCTION') || normalized.includes('MANAGER') || normalized.includes('HEAD') || normalized.includes('SUPERVISOR') || normalized.includes('INCHARGE') || normalized.includes('LEAD')) {
-      return ["batch:create", "batch:view", "batch:edit", "batch:sign", "batch:preview", "create:product", "edit:product", "product:deactivate", "batch_sheet_master:create", "batch_sheet_master:edit", "batch_sheet_master:submit", "batch_sheet_master:deactivate", "department:create", "department:submit", "designation:create", "designation:submit", "batch_number:create", "batch_number:submit", "format:create", "format:submit", "lookup:create", "lookup:edit", "lookup:submit", "op:production_in_progress", "op:ready_for_qa_review"];
-    }
-    return ["batch:view", "batch:sign", "batch:preview"];
+    const { permissions } = getDefaultPermissionsForDesignation(roleName);
+    return permissions;
   };
 
   const handleDesignationChangeForNewUser = (designationVal: string) => {
-    const presets = getPermissionPresetForRole(designationVal);
+    const { permissions, profile } = getDefaultPermissionsForDesignation(designationVal);
     setNewUser({
       ...newUser,
       designation: designationVal,
       role: designationVal,
-      permissions: presets
+      permissions: permissions,
+      permissionSource: 'DESIGNATION_DEFAULT',
+      designationPermissionProfileId: profile?.profileId || 'custom',
+      designationPermissionProfileVersion: profile?.version || '1.0'
     });
   };
 
   const handleDesignationChangeForEditUser = (designationVal: string) => {
-    const presets = getPermissionPresetForRole(designationVal);
+    const { permissions, profile } = getDefaultPermissionsForDesignation(designationVal);
     setEditingUser({
       ...editingUser,
       designation: designationVal,
       role: designationVal,
-      permissions: presets
+      permissions: permissions,
+      permissionSource: 'DESIGNATION_DEFAULT',
+      designationPermissionProfileId: profile?.profileId || 'custom',
+      designationPermissionProfileVersion: profile?.version || '1.0'
     });
+  };
+
+  const handleResetUserToDesignationDefaults = async (targetUser: any) => {
+    if (!targetUser || !targetUser.uid) return;
+    try {
+      const res = await api.post(`/designation-profiles/users/${targetUser.uid}/reset-defaults`, {
+        reason: 'Reset to standard designation profile defaults via Admin Console'
+      });
+      if (res.data && res.data.success) {
+        toast.success(res.data.message || `Reset permissions for ${targetUser.displayName || targetUser.name}`);
+        fetchUsers();
+      }
+    } catch (err: any) {
+      console.error("Failed to reset user permissions:", err);
+      toast.error(err.response?.data?.message || "Failed to reset user permissions");
+    }
   };
 
   const resetNewUserState = () => {
@@ -264,6 +285,9 @@ export default function AdminPanel() {
       mfaEnabled: false,
       role: 'Viewer',
       permissions: ['batch:view'],
+      permissionSource: 'DESIGNATION_DEFAULT',
+      designationPermissionProfileId: '',
+      designationPermissionProfileVersion: '',
       defaultBranch: 'Masulkhana',
       allowedBranches: ['Masulkhana'],
       multiBranchAccess: false,
@@ -524,7 +548,7 @@ export default function AdminPanel() {
       } else {
         current.push(id);
       }
-      setNewUser({ ...newUser, permissions: current });
+      setNewUser({ ...newUser, permissions: current, permissionSource: 'USER_OVERRIDE' });
     } else {
       const current = [...(editingUser.permissions || [])];
       const index = current.indexOf(id);
@@ -533,7 +557,7 @@ export default function AdminPanel() {
       } else {
         current.push(id);
       }
-      setEditingUser({ ...editingUser, permissions: current });
+      setEditingUser({ ...editingUser, permissions: current, permissionSource: 'USER_OVERRIDE' });
     }
   };
 
@@ -648,11 +672,14 @@ export default function AdminPanel() {
                         <SelectValue placeholder="Select Department" />
                       </SelectTrigger>
                       <SelectContent className="max-h-56">
-                        {activeDepartments.map((dept: any) => (
-                          <SelectItem key={dept.departmentId || dept.id} value={dept.departmentName}>
-                            {dept.departmentName} ({dept.departmentCode})
-                          </SelectItem>
-                        ))}
+                        {activeDepartments.map((dept: any, idx: number) => {
+                          const deptKey = dept.departmentId || dept.id || `add-dept-${idx}`;
+                          return (
+                            <SelectItem key={`add-user-dept-opt-${deptKey}-${idx}`} value={dept.departmentName}>
+                              {dept.departmentName} ({dept.departmentCode})
+                            </SelectItem>
+                          );
+                        })}
                         {activeDepartments.length === 0 && (
                           <SelectItem disabled value="_none_">
                             No active departments found
@@ -672,11 +699,14 @@ export default function AdminPanel() {
                         <SelectValue placeholder={newUser.department ? "Select Designation" : "Select Department First"} />
                       </SelectTrigger>
                       <SelectContent className="max-h-56">
-                        {getFilteredDesignations(newUser.department).map((des) => (
-                          <SelectItem key={des.designationId} value={des.designationName}>
-                            {des.designationName}{des.designationCode ? ` (${des.designationCode})` : ""}
-                          </SelectItem>
-                        ))}
+                        {getFilteredDesignations(newUser.department).map((des: any, idx: number) => {
+                          const desKey = des.designationId || des.id || `add-desig-${idx}`;
+                          return (
+                            <SelectItem key={`add-user-desig-opt-${desKey}-${idx}`} value={des.designationName}>
+                              {des.designationName}{des.designationCode ? ` (${des.designationCode})` : ""}
+                            </SelectItem>
+                          );
+                        })}
                         {getFilteredDesignations(newUser.department).length === 0 && (
                           <SelectItem disabled value="_none_">
                             No active designations under {newUser.department || 'Selected Department'}
@@ -798,7 +828,7 @@ export default function AdminPanel() {
                       <p className="text-[10px] text-rose-500 font-bold bg-rose-50/50 p-2 rounded-xl border border-rose-100 flex flex-wrap gap-1 mt-1">
                         <span>Missing:</span>
                         {getMissingPasswordRequirements(newUser.password).map((req, rid) => (
-                          <Badge key={req} className="bg-rose-100 hover:bg-rose-100/80 text-rose-700 border-none text-[9px] py-0.5 px-1.5 font-bold rounded">
+                          <Badge key={`new-pwd-missing-${rid}-${req}`} className="bg-rose-100 hover:bg-rose-100/80 text-rose-700 border-none text-[9px] py-0.5 px-1.5 font-bold rounded">
                             {req}
                           </Badge>
                         ))}
@@ -883,11 +913,11 @@ export default function AdminPanel() {
                   <Label className="text-slate-700 font-medium">Roles/Permissions Matrix</Label>
                   <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden shadow-inner">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 max-h-[220px] overflow-y-auto">
-                      {PERMISSIONS_LIST.map((permission) => {
+                      {PERMISSIONS_LIST.map((permission, idx) => {
                         const isChecked = newUser.permissions.includes(permission.id);
                         return (
                           <div 
-                            key={permission.id} 
+                            key={`new-user-perm-item-${permission.id || idx}-${idx}`} 
                             onClick={() => handleTogglePermission(permission.id, true)}
                             className={`flex items-center space-x-3 p-2.5 rounded-xl border transition-colors cursor-pointer select-none ${
                               isChecked 
@@ -940,11 +970,11 @@ export default function AdminPanel() {
                   <div className="space-y-2">
                     <Label className="text-slate-700 font-medium">Allowed Branches <span className="text-rose-500">*</span></Label>
                     <div className="flex gap-4 pt-2.5">
-                      {["Masulkhana", "Baddi"].map((branch) => {
+                      {["Masulkhana", "Baddi"].map((branch, idx) => {
                         const isChecked = newUser.allowedBranches.includes(branch);
                         return (
                           <div 
-                            key={branch}
+                            key={`new-user-branch-${branch}-${idx}`}
                             onClick={() => handleToggleBranch(branch, true)}
                             className={`flex items-center space-x-2 border rounded-xl px-4 py-2 cursor-pointer select-none font-medium text-xs ${
                               isChecked 
@@ -1109,7 +1139,7 @@ export default function AdminPanel() {
           </TabsTrigger>
           <TabsTrigger value="roles" className="rounded-xl px-8 data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-600 font-bold">
             <Shield className="w-4 h-4 mr-2" />
-            Roles Catalog
+            Designation Profiles &amp; RBAC
           </TabsTrigger>
           <TabsTrigger value="permissions" className="rounded-xl px-8 data-[state=active]:bg-indigo-50 data-[state=active]:text-indigo-600 font-bold">
             <Key className="w-4 h-4 mr-2" />
@@ -1143,6 +1173,7 @@ export default function AdminPanel() {
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="pl-8 py-4 text-slate-700 font-bold text-xs uppercase tracking-wider">Employee Information</TableHead>
                       <TableHead className="text-slate-700 font-bold text-xs uppercase tracking-wider">Functional Role</TableHead>
+                      <TableHead className="text-slate-700 font-bold text-xs uppercase tracking-wider">Permissions &amp; Source</TableHead>
                       <TableHead className="text-slate-700 font-bold text-xs uppercase tracking-wider mr-2">Department</TableHead>
                       <TableHead className="text-slate-700 font-bold text-xs uppercase tracking-wider">Branch Access</TableHead>
                       <TableHead className="text-slate-700 font-bold text-xs uppercase tracking-wider">Status</TableHead>
@@ -1151,13 +1182,15 @@ export default function AdminPanel() {
                   </TableHeader>
                   <TableBody>
                     {filteredUsers.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="h-48 text-center text-slate-400 italic">
+                      <TableRow key="no-matching-personnel-row">
+                        <TableCell colSpan={7} className="h-48 text-center text-slate-400 italic">
                           No matching personnel records found in database.
                         </TableCell>
                       </TableRow>
-                    ) : filteredUsers.map((user) => (
-                      <TableRow key={user.uid} className="hover:bg-slate-50/30 transition-colors border-b border-slate-50">
+                    ) : filteredUsers.map((user, idx) => {
+                      const userKey = user.uid || (user as any).id || user.employeeId || user.email || user.username || `user-${idx}`;
+                      return (
+                      <TableRow key={`admin-user-row-${userKey}-${idx}`} className="hover:bg-slate-50/30 transition-colors border-b border-slate-50">
                         <TableCell className="pl-8 py-4">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold uppercase shrink-0">
@@ -1187,6 +1220,18 @@ export default function AdminPanel() {
                           </div>
                         </TableCell>
                         <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="outline" className="text-[10px] font-mono font-bold bg-indigo-50/50 text-indigo-700 border-indigo-200">
+                                {(user.permissions || []).length} Rights
+                              </Badge>
+                            </div>
+                            <span className={`text-[10px] font-medium ${user.permissionSource === 'USER_OVERRIDE' ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>
+                              {user.permissionSource === 'USER_OVERRIDE' ? '● Custom Override' : '✓ Default Profile'}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
                           <div className="flex items-center gap-1.5">
                             <Building className="w-3.5 h-3.5 text-slate-400" />
                             <span className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-full">{user.department || 'N/A'}</span>
@@ -1200,8 +1245,8 @@ export default function AdminPanel() {
                               <span className="text-[10px] text-slate-400 font-normal font-mono">(default)</span>
                             </div>
                             <div className="flex gap-1 flex-wrap max-w-[200px]">
-                              {(user.allowedBranches || []).map((b) => (
-                                <Badge key={b} className="bg-slate-55 border-none hover:bg-slate-100 text-[9px] font-bold text-slate-600 rounded px-1.5 py-0">
+                              {(user.allowedBranches || []).map((b, bIdx) => (
+                                <Badge key={`user-${userKey}-branch-${b}-${bIdx}`} className="bg-slate-55 border-none hover:bg-slate-100 text-[9px] font-bold text-slate-600 rounded px-1.5 py-0">
                                   {b}
                                 </Badge>
                               ))}
@@ -1229,7 +1274,7 @@ export default function AdminPanel() {
                                 </Button>
                               }
                             />
-                            <DropdownMenuContent align="end" className="rounded-xl w-52 shadow-xl border-slate-100">
+                            <DropdownMenuContent align="end" className="rounded-xl w-56 shadow-xl border-slate-100">
                               <DropdownMenuGroup>
                                 <DropdownMenuLabel className="text-slate-500 text-[10px] uppercase font-bold">User Actions</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
@@ -1251,6 +1296,7 @@ export default function AdminPanel() {
                                     mfaEnabled: !!rawU.mfaEnabled,
                                     role: rawU.designation || rawU.role || 'Viewer',
                                     permissions: rawU.permissions || [],
+                                    permissionSource: rawU.permissionSource || 'DESIGNATION_DEFAULT',
                                     defaultBranch: rawU.defaultBranch || 'Masulkhana',
                                     allowedBranches: rawU.allowedBranches || ['Masulkhana'],
                                     multiBranchAccess: !!rawU.multiBranchAccess,
@@ -1271,6 +1317,10 @@ export default function AdminPanel() {
                                   <SettingsIcon className="w-4 h-4 mr-2 text-slate-500" /> Complete Metadata view
                                 </DropdownMenuItem>
                                 
+                                <DropdownMenuItem onClick={() => handleResetUserToDesignationDefaults(user)} className="font-semibold text-indigo-700">
+                                  <RotateCcw className="w-4 h-4 mr-2 text-indigo-500" /> Reset to Profile Defaults
+                                </DropdownMenuItem>
+
                                 <DropdownMenuItem onClick={() => handleToggleStatus(user.uid, user.status || 'active')} className="font-semibold">
                                   {user.status === 'inactive' || user.status === 'locked' ? (
                                     <><UserCheck className="w-4 h-4 mr-2 text-emerald-500" /> Revoke Suspension / Unlock</>
@@ -1291,7 +1341,8 @@ export default function AdminPanel() {
                           </DropdownMenu>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -1300,36 +1351,9 @@ export default function AdminPanel() {
         </TabsContent>
 
         <TabsContent value="roles">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {designations.map((d: any) => (
-              <Card key={d.designationId} className="border-none shadow-sm rounded-3xl overflow-hidden bg-white hover:shadow-md transition-shadow">
-                <CardHeader className="pb-2">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
-                    <Shield className="w-6 h-6 text-indigo-600" />
-                  </div>
-                  <CardTitle className="text-lg font-bold text-slate-900">{d.designationName}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs text-slate-500 leading-relaxed min-h-[50px]">
-                    Department: <span className="font-bold">{d.departmentName || 'N/A'}</span>
-                    {d.designationCode && <><br />Code: <span className="font-mono">{d.designationCode}</span></>}
-                  </p>
-                  <Button variant="link" className="p-0 h-auto mt-4 text-indigo-600 font-bold text-xs" onClick={() => {
-                    const presets = getPermissionPresetForRole(d.designationName);
-                    alert(`Compliant preset permissions for ${d.designationName}:\n\n` + presets.map(p => `• ${p}`).join('\n'));
-                  }}>
-                    Show Presets catalog →
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-            {designations.length === 0 && (
-              <div className="col-span-full h-48 flex items-center justify-center text-slate-400 italic">
-                No active designations created in Designation Masters.
-              </div>
-            )}
-          </div>
+          <DesignationProfilesManager onRefreshUsers={fetchUsers} />
         </TabsContent>
+
 
         <TabsContent value="permissions">
           <Card className="border-none shadow-sm rounded-3xl overflow-hidden bg-white">
@@ -1339,8 +1363,8 @@ export default function AdminPanel() {
             </CardHeader>
             <CardContent className="p-8">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {PERMISSIONS_LIST.map((p) => (
-                  <div key={p.id} className="border border-slate-100 rounded-2xl p-4 bg-slate-50/40 hover:bg-indigo-50/10 transition-colors">
+                {PERMISSIONS_LIST.map((p, idx) => (
+                  <div key={`permissions-tab-card-${p.id || idx}-${idx}`} className="border border-slate-100 rounded-2xl p-4 bg-slate-50/40 hover:bg-indigo-50/10 transition-colors">
                     <div className="flex justify-between items-start mb-2">
                       <span className="text-xs px-2.5 py-1 rounded-full font-bold uppercase font-mono text-indigo-700 bg-indigo-50 border border-indigo-100/30 shrink-0">
                         {p.category}
@@ -1430,11 +1454,14 @@ export default function AdminPanel() {
                         <SelectValue placeholder="Select Department" />
                       </SelectTrigger>
                       <SelectContent className="max-h-56">
-                        {activeDepartments.map((dept: any) => (
-                          <SelectItem key={dept.departmentId || dept.id} value={dept.departmentName}>
-                            {dept.departmentName} ({dept.departmentCode})
-                          </SelectItem>
-                        ))}
+                        {activeDepartments.map((dept: any, idx: number) => {
+                          const deptKey = dept.departmentId || dept.id || `edit-dept-${idx}`;
+                          return (
+                            <SelectItem key={`edit-user-dept-opt-${deptKey}-${idx}`} value={dept.departmentName}>
+                              {dept.departmentName} ({dept.departmentCode})
+                            </SelectItem>
+                          );
+                        })}
                         {activeDepartments.length === 0 && (
                           <SelectItem disabled value="_none_">
                             No active departments found
@@ -1453,11 +1480,14 @@ export default function AdminPanel() {
                         <SelectValue placeholder="Select Designation" />
                       </SelectTrigger>
                       <SelectContent className="max-h-56">
-                        {getFilteredDesignations(editingUser.department).map((des) => (
-                          <SelectItem key={des.designationId} value={des.designationName}>
-                            {des.designationName}{des.designationCode ? ` (${des.designationCode})` : ""}
-                          </SelectItem>
-                        ))}
+                        {getFilteredDesignations(editingUser.department).map((des: any, idx: number) => {
+                          const desKey = des.designationId || des.id || `edit-desig-${idx}`;
+                          return (
+                            <SelectItem key={`edit-user-desig-opt-${desKey}-${idx}`} value={des.designationName}>
+                              {des.designationName}{des.designationCode ? ` (${des.designationCode})` : ""}
+                            </SelectItem>
+                          );
+                        })}
                         {getFilteredDesignations(editingUser.department).length === 0 && (
                           <SelectItem disabled value="_none_">
                             No active designations under {editingUser.department || 'Selected Department'}
@@ -1599,21 +1629,47 @@ export default function AdminPanel() {
                   <Shield className="w-5 h-5 text-indigo-500" />
                   <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">3. Role &amp; Permission Management</h3>
                 </div>
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full uppercase">
-                    Role and preset permissions determined by selected designation
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full uppercase ${
+                    editingUser.permissionSource === 'USER_OVERRIDE'
+                      ? 'text-amber-700 bg-amber-50 border border-amber-200'
+                      : 'text-indigo-600 bg-indigo-50'
+                  }`}>
+                    {editingUser.permissionSource === 'USER_OVERRIDE' ? '● Custom Overrides Active' : '✓ Using Designation Default Profile'}
                   </span>
+                  
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      if (editingUser?.designation) {
+                        const { permissions, profile } = getDefaultPermissionsForDesignation(editingUser.designation);
+                        setEditingUser({
+                          ...editingUser,
+                          permissions,
+                          permissionSource: 'DESIGNATION_DEFAULT',
+                          designationPermissionProfileId: profile?.profileId || 'custom',
+                          designationPermissionProfileVersion: profile?.version || '1.0'
+                        });
+                        toast.info(`Reset permissions to Profile v${profile?.version || '1.0'} defaults for ${editingUser.designation}`);
+                      }
+                    }}
+                    className="text-xs h-7 rounded-xl border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                  >
+                    <RotateCcw className="w-3 h-3 mr-1" /> Reset to Profile Defaults
+                  </Button>
                 </div>
 
                 <div className="space-y-2">
                   <Label className="text-slate-700 font-medium">Roles/Permissions Matrix</Label>
                   <div className="border border-slate-100 rounded-2xl bg-white overflow-hidden shadow-inner">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 max-h-[220px] overflow-y-auto font-sans">
-                      {PERMISSIONS_LIST.map((permission) => {
+                      {PERMISSIONS_LIST.map((permission, idx) => {
                         const isChecked = (editingUser.permissions || []).includes(permission.id);
                         return (
                           <div 
-                            key={permission.id} 
+                            key={`edit-user-perm-item-${permission.id || idx}-${idx}`} 
                             onClick={() => handleTogglePermission(permission.id, false)}
                             className={`flex items-center space-x-3 p-2.5 rounded-xl border transition-colors cursor-pointer select-none ${
                               isChecked 
@@ -1666,11 +1722,11 @@ export default function AdminPanel() {
                   <div className="space-y-2">
                     <Label className="text-slate-700 font-medium">Allowed Branches <span className="text-rose-500">*</span></Label>
                     <div className="flex gap-4 pt-2.5">
-                      {["Masulkhana", "Baddi"].map((branch) => {
+                      {["Masulkhana", "Baddi"].map((branch, idx) => {
                         const isChecked = (editingUser.allowedBranches || []).includes(branch);
                         return (
                           <div 
-                            key={branch}
+                            key={`edit-user-branch-${branch}-${idx}`}
                             onClick={() => handleToggleBranch(branch, false)}
                             className={`flex items-center space-x-2 border rounded-xl px-4 py-2 cursor-pointer select-none font-medium text-xs ${
                               isChecked 

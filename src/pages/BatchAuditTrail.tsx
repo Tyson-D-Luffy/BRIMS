@@ -35,6 +35,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { HighlightText } from '../components/HighlightText';
 
 export default function BatchAuditTrail() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -106,13 +107,23 @@ export default function BatchAuditTrail() {
     const userString = (log.userEmail || log.performedBy || '').toLowerCase();
     const actionString = (log.action || '').toLowerCase();
     const entityIdString = (log.entityId || '').toLowerCase();
+    const batchNumberString = ((log as any).batchNumber || '').toLowerCase();
+    const requestIdString = ((log as any).requestId || (log as any).batchSheetRequestId || '').toLowerCase();
+    const sheetIdString = ((log as any).sheetId || '').toLowerCase();
+    const printJobIdString = ((log as any).printJobId || '').toLowerCase();
     const meaningString = (log.signatureMeaning || '').toLowerCase();
+    const reasonString = (log.changeReason || '').toLowerCase();
     const keyword = search.toLowerCase();
 
     const matchesSearch = !keyword || 
       userString.includes(keyword) ||
       actionString.includes(keyword) ||
       entityIdString.includes(keyword) ||
+      batchNumberString.includes(keyword) ||
+      requestIdString.includes(keyword) ||
+      sheetIdString.includes(keyword) ||
+      printJobIdString.includes(keyword) ||
+      reasonString.includes(keyword) ||
       meaningString.includes(keyword);
 
     const matchesUserEmailFilter = !userEmailSearch || 
@@ -396,25 +407,31 @@ export default function BatchAuditTrail() {
                         {(log.performedBy || log.userEmail || 'S')[0].toUpperCase()}
                       </div>
                       <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-slate-900 truncate max-w-[160px]">{log.performedBy || log.userEmail}</span>
+                        <span className="text-sm font-semibold text-slate-900 truncate max-w-[160px]">
+                          <HighlightText text={log.performedBy || log.userEmail || ''} search={search || userEmailSearch} />
+                        </span>
                         <span className="text-[10px] text-indigo-600 font-bold tracking-wider uppercase">{(log as any).functionalRole || log.role || 'USER'}</span>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="bg-white border-slate-200 text-slate-700 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight whitespace-nowrap">
-                      {(log.action || '').replace(/_/g, ' ')}
+                      <HighlightText text={(log.action || '').replace(/_/g, ' ')} search={search} />
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] bg-slate-100 px-2 py-0.5 rounded-md whitespace-nowrap">
-                      {log.module || log.entityType || 'N/A'}
+                      <HighlightText text={log.module || log.entityType || 'N/A'} search={search} />
                     </span>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col text-[11px]">
-                      <span className="text-slate-600 font-semibold">{log.branch || log.selectedBranch || 'N/A'}</span>
-                      <span className="font-mono text-slate-400 mt-0.5 truncate max-w-[155px]">ID: {log.entityId || 'N/A'}</span>
+                      <span className="text-slate-600 font-semibold">
+                        <HighlightText text={log.branch || log.selectedBranch || 'N/A'} search={search} />
+                      </span>
+                      <span className="font-mono text-slate-400 mt-0.5 truncate max-w-[155px]">
+                        ID: <HighlightText text={log.entityId || 'N/A'} search={search} />
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -424,7 +441,9 @@ export default function BatchAuditTrail() {
                           <History className="w-3.5 h-3.5 shrink-0 text-amber-600" />
                           Certified ESig applied
                         </div>
-                        <p className="text-[10px] text-slate-600 leading-relaxed italic line-clamp-2">"{log.signatureMeaning}"</p>
+                        <p className="text-[10px] text-slate-600 leading-relaxed italic line-clamp-2">
+                          "<HighlightText text={log.signatureMeaning || ''} search={search} />"
+                        </p>
                         <div className="flex items-center gap-2 pt-1 border-t border-amber-100/50 mt-1 justify-between">
                           <span className="text-[8px] text-slate-400 font-mono">IP: {log.ipAddress || 'Client'}</span>
                           <span className="text-[8px] text-amber-600 font-bold">SHA-256 Validated</span>

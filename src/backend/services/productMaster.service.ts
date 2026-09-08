@@ -4,6 +4,7 @@ import { collection, doc, getDoc, getDocs, query, where, orderBy, setDoc, update
 import { AuditService } from "./audit.service.ts";
 import { validateBatchNumber } from "../../lib/batchValidation.ts";
 import { NotificationService, NotificationType, TargetType } from "./notification.service.ts";
+import { canPerformWorkflowAction } from "../../lib/workflowEngine.ts";
 
 export function getProductLogUser(user: any): string {
   if (!user) return "system";
@@ -514,6 +515,18 @@ export class ProductMasterService {
     const originalWorkflowStatus = product.workflowStatus || "Draft";
     let targetWorkflowStatus = originalWorkflowStatus;
     let targetStatus = product.status || "inactive";
+
+    // Stage-Aware Workflow Authorization Check
+    const authCheck = canPerformWorkflowAction({
+      user: adminUser,
+      entityType: "PRODUCT_MASTER",
+      currentStatus: originalWorkflowStatus,
+      action,
+      record: product
+    });
+    if (!authCheck.allowed) {
+      throw new Error(authCheck.reason || "Unauthorized workflow transition");
+    }
 
     const comments = payload?.comments || payload?.changeReason || "";
     const performEmail = getProductLogUser(adminUser);

@@ -42,9 +42,100 @@ export function expandBatchSeries(series: string): string[] {
   return result;
 }
 
+export function computeServerSheetCustody(sheet: BatchSheetItem, batchStatus?: string): string {
+  if (sheet.currentCustody) return sheet.currentCustody;
+  if (sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED') return 'QA – Reviewed';
+  if (sheet.qaReceiptStatus === 'RECEIVED_BY_QA') return 'QA – Under Review';
+  if (sheet.qaReturnStatus === 'SENT_FOR_QA_REVIEW') return 'QA – Awaiting Receipt';
+  if (sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') return 'Production';
+  if (sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION') return 'QA – Handed Over / Awaiting Production Receipt';
+  const isPrinted = sheet.status === 'PRINT_COMPLETED' || sheet.status === 'PRINTED' || sheet.status === 'REPRINTED' || (sheet.printCount || 0) > 0;
+  if (isPrinted) return 'QA – Printed / Pending Handover';
+  return 'QA – Awaiting Printing';
+}
+
+export function normalizeServerBatchSheet(sheet: BatchSheetItem, batchStatus: string = 'ISSUED'): BatchSheetItem {
+  let handoverStatus = sheet.handoverStatus;
+  let productionReceiptStatus = sheet.productionReceiptStatus;
+  let productionStatus = sheet.productionStatus;
+  let qaReturnStatus = sheet.qaReturnStatus;
+  let qaReceiptStatus = sheet.qaReceiptStatus;
+  let qaReviewStatus = sheet.qaReviewStatus;
+
+  if (!handoverStatus) {
+    if (['HANDED_OVER', 'PRODUCTION_IN_PROGRESS', 'READY_FOR_QA_REVIEW', 'COMPLETED'].includes(batchStatus)) {
+      handoverStatus = 'HANDED_OVER_TO_PRODUCTION';
+    } else {
+      handoverStatus = 'PENDING_HANDOVER';
+    }
+  }
+
+  if (!productionReceiptStatus) {
+    if (['PRODUCTION_IN_PROGRESS', 'READY_FOR_QA_REVIEW', 'COMPLETED'].includes(batchStatus)) {
+      productionReceiptStatus = 'RECEIVED_BY_PRODUCTION';
+    } else if (handoverStatus === 'HANDED_OVER_TO_PRODUCTION') {
+      productionReceiptStatus = 'AWAITING_PRODUCTION_RECEIPT';
+    } else {
+      productionReceiptStatus = 'NOT_AVAILABLE';
+    }
+  }
+
+  if (!productionStatus) {
+    if (['COMPLETED'].includes(batchStatus)) {
+      productionStatus = 'COMPLETED';
+    } else if (['READY_FOR_QA_REVIEW'].includes(batchStatus)) {
+      productionStatus = 'READY_FOR_QA_REVIEW';
+    } else if (['PRODUCTION_IN_PROGRESS'].includes(batchStatus)) {
+      productionStatus = 'IN_PROGRESS';
+    } else {
+      productionStatus = 'PENDING';
+    }
+  }
+
+  if (!qaReturnStatus) {
+    if (['READY_FOR_QA_REVIEW', 'COMPLETED'].includes(batchStatus)) {
+      qaReturnStatus = 'SENT_FOR_QA_REVIEW';
+    } else {
+      qaReturnStatus = 'NOT_SENT';
+    }
+  }
+
+  if (!qaReceiptStatus) {
+    if (['COMPLETED', 'READY_FOR_QA_REVIEW'].includes(batchStatus)) {
+      qaReceiptStatus = 'RECEIVED_BY_QA';
+    } else {
+      qaReceiptStatus = 'NOT_AVAILABLE';
+    }
+  }
+
+  if (!qaReviewStatus) {
+    if (['COMPLETED'].includes(batchStatus)) {
+      qaReviewStatus = 'QA_REVIEW_COMPLETED';
+    } else if (qaReceiptStatus === 'RECEIVED_BY_QA') {
+      qaReviewStatus = 'RECEIVED';
+    } else {
+      qaReviewStatus = 'PENDING_RECEIPT';
+    }
+  }
+
+  const normalized: BatchSheetItem = {
+    ...sheet,
+    handoverStatus,
+    productionReceiptStatus,
+    productionStatus,
+    qaReturnStatus,
+    qaReceiptStatus,
+    qaReviewStatus,
+    history: sheet.history || []
+  };
+
+  normalized.currentCustody = computeServerSheetCustody(normalized, batchStatus);
+  return normalized;
+}
+
 export function initializeBatchSheets(batchData: any): BatchSheetItem[] {
   if (Array.isArray(batchData.batchSheets) && batchData.batchSheets.length > 0) {
-    return batchData.batchSheets;
+    return batchData.batchSheets.map((s: BatchSheetItem) => normalizeServerBatchSheet(s, batchData.status));
   }
 
   const rawSeries = batchData.batchNumberSeries || batchData.batchNumber || '';
@@ -71,7 +162,7 @@ export function initializeBatchSheets(batchData: any): BatchSheetItem[] {
       initialStatus = 'PENDING';
     }
 
-    return {
+    const item: BatchSheetItem = {
       id: `sheet-${idx}`,
       batchNumber: num,
       sequenceIndex: idx,
@@ -98,6 +189,8 @@ export function initializeBatchSheets(batchData: any): BatchSheetItem[] {
         }
       ] : []
     };
+
+    return normalizeServerBatchSheet(item, batchData.status);
   });
 }
 
@@ -683,10 +776,38 @@ export class BatchIssuanceService {
       }
 
       const oldStatus = batchData.status;
-      const updateData = {
+      const updateData: Record<string, any> = {
         status: newStatus,
         updatedAt: new Date().toISOString()
       };
+
+      if (newStatus === 'READY_FOR_QA_REVIEW' && batchData.batchSheets && batchData.batchSheets.length > 0) {
+        const nowIso = new Date().toISOString();
+        const userName = user?.displayName || user?.username || user?.email || 'Production Lead';
+        const userUid = user?.uid || 'user';
+        const updatedSheets = batchData.batchSheets.map(s => {
+          if ((s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' || s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') && 
+              s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW' && 
+              s.qaReviewStatus !== 'QA_REVIEW_COMPLETED') {
+            return {
+              ...s,
+              productionReceiptStatus: 'RECEIVED_BY_PRODUCTION',
+              qaReturnStatus: 'SENT_FOR_QA_REVIEW',
+              qaReceiptStatus: 'AWAITING_QA_RECEIPT',
+              qaReviewStatus: 'PENDING_RECEIPT',
+              productionStatus: 'READY_FOR_QA_REVIEW',
+              currentCustody: 'QA – Awaiting Receipt',
+              currentOperationalState: 'SENT_FOR_QA_REVIEW',
+              sentForQaReviewAt: nowIso,
+              sentForQaReviewBy: userUid,
+              sentForQaReviewByName: userName
+            };
+          }
+          return s;
+        });
+        updateData.batchSheets = updatedSheets;
+        updateData.qaReviewSubStatus = 'QA_REVIEW_IN_PROGRESS';
+      }
 
       transaction.update(batchRef, sanitizeForFirestore(updateData));
 
@@ -1151,6 +1272,27 @@ export class BatchIssuanceService {
   }
 
   /**
+   * Log a print operational or interactive action (both sheet history and central batch process audit)
+   */
+  static async logPrintAction(
+    batchId: string,
+    sheetId: string,
+    action: any,
+    user: any,
+    details?: any,
+    metadata?: any
+  ) {
+    return await PrintService.logPrintAction(
+      batchId,
+      sheetId,
+      action,
+      user,
+      details,
+      metadata
+    );
+  }
+
+  /**
    * Handle printing issue report and page reprint specification.
    */
   static async reportPrintingIssue(
@@ -1225,6 +1367,1102 @@ export class BatchIssuanceService {
     });
 
     return summary;
+  }
+
+  /**
+   * QA Handover of one or more selected Batch Sheets to Production.
+   * Gated: Only printed sheets can be handed over.
+   */
+  static async handoverBatchSheets(
+    batchId: string,
+    sheetIds: string[],
+    changeReason: string,
+    user: any,
+    signaturePassword?: string,
+    metadata?: any
+  ) {
+    await ensureAuth();
+
+    // Verify e-signature credentials
+    if (signaturePassword) {
+      await SignatureService.verifyCredentials(user.email, signaturePassword);
+    }
+
+    if (!Array.isArray(sheetIds) || sheetIds.length === 0) {
+      throw new Error("At least one Batch Sheet must be selected for handover.");
+    }
+
+    // Role check: QA or Admin or specific handover rights
+    const baseRole = getUserBaseRole(user);
+    const userPerms = user.permissions || [];
+    const isAuthorized = baseRole === 'ADMIN' || baseRole === 'QA' || 
+      userPerms.some((p: string) => ['op:ready_for_handover', 'batch:approve', 'batch:review', 'batch:print', 'op:issued'].includes(p));
+
+    if (!isAuthorized) {
+      throw new Error("Unauthorized: Only QA or Admin personnel can hand over Batch Sheets to Production.");
+    }
+
+    const batchRef = doc(db, "production_batches", batchId);
+
+    return await runTransaction(db, async (transaction) => {
+      const batchSnap = await transaction.get(batchRef);
+      if (!batchSnap.exists()) {
+        throw new Error("Batch record not found.");
+      }
+
+      const batchData = batchSnap.data() as BatchIssuance & { branch?: string };
+
+      // Branch authorization
+      if (user.branch && batchData.branch && user.branch !== batchData.branch && baseRole !== 'ADMIN') {
+        throw new Error("Unauthorized: You do not have access to this branch's batch records.");
+      }
+
+      const batchSheets = initializeBatchSheets(batchData);
+      const selected = batchSheets.filter(s => sheetIds.includes(s.id) || sheetIds.includes(s.batchNumber));
+
+      if (selected.length === 0) {
+        throw new Error("None of the specified Batch Sheets were found in this batch.");
+      }
+
+      // Validate each selected sheet
+      const eligibleToHandover = selected.filter(sheet => {
+        const isPrinted = sheet.status === 'PRINT_COMPLETED' || sheet.status === 'PRINTED' || sheet.status === 'REPRINTED' || (sheet.printCount || 0) > 0;
+        return isPrinted && sheet.handoverStatus !== 'HANDED_OVER_TO_PRODUCTION';
+      });
+
+      if (eligibleToHandover.length === 0) {
+        for (const sheet of selected) {
+          const isPrinted = sheet.status === 'PRINT_COMPLETED' || sheet.status === 'PRINTED' || sheet.status === 'REPRINTED' || (sheet.printCount || 0) > 0;
+          if (!isPrinted) {
+            throw new Error(`Sheet ${sheet.batchNumber} has not completed printing. Only printed sheets can be handed over to Production.`);
+          }
+          if (sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION') {
+            throw new Error(`Sheet ${sheet.batchNumber} has already been handed over to Production.`);
+          }
+        }
+        throw new Error("None of the selected Batch Sheets are currently eligible for handover.");
+      }
+
+      const toProcess = eligibleToHandover;
+
+      // Create Electronic Signature
+      const signatureMeaning = `QA Handover of ${toProcess.length} Batch Sheet(s) to Production`;
+      const sig = await SignatureService.signAction(
+        user.uid,
+        user.email,
+        "HANDOVER_TO_PRODUCTION",
+        "PRODUCTION_BATCH",
+        batchId,
+        signatureMeaning,
+        metadata?.ip || "unknown",
+        metadata?.userAgent || "internal",
+        transaction
+      );
+
+      const nowIso = new Date().toISOString();
+      const userName = user.displayName || user.username || user.email || 'Akshay Sharma';
+      const userEmployeeId = user.employeeId || 'N/A';
+      const userRole = user.role || 'QA';
+
+      // Update each selected sheet
+      toProcess.forEach(sheet => {
+        sheet.handoverStatus = 'HANDED_OVER_TO_PRODUCTION';
+        sheet.handedOverBy = user.uid;
+        sheet.handedOverByName = userName;
+        sheet.handedOverByRole = userRole;
+        sheet.handedOverByEmployeeId = userEmployeeId;
+        sheet.handedOverAt = nowIso;
+        sheet.handoverSignatureId = sig.id;
+        sheet.productionReceiptStatus = 'AWAITING_PRODUCTION_RECEIPT';
+        sheet.currentCustody = 'QA – Handed Over / Awaiting Production Receipt';
+        sheet.currentOperationalState = 'HANDED_OVER_AWAITING_PRODUCTION_RECEIPT';
+
+        const historyEntry: BatchSheetPrintHistoryEntry = {
+          id: `hist-ho-${sheet.id}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          action: 'HANDOVER_TO_PRODUCTION' as any,
+          status: 'HANDED_OVER_TO_PRODUCTION' as any,
+          timestamp: nowIso,
+          performedBy: userName,
+          userId: user.uid,
+          userEmail: user.email,
+          userRole: userRole,
+          employeeId: userEmployeeId,
+          reason: changeReason || `Batch sheet handed over to Production by ${userName}`,
+          signatureId: sig.id,
+          signatureMeaning
+        };
+        sheet.history = [...(sheet.history || []), historyEntry];
+      });
+
+      // Recalculate parent counts
+      const total = batchSheets.length;
+      const handedOverCount = batchSheets.filter(s => s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION').length;
+      const productionReceivedCount = batchSheets.filter(s => s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION').length;
+      const allHandedOver = handedOverCount === total;
+      const allReceived = productionReceivedCount === total;
+
+      let nextParentStatus = batchData.status;
+      let handoverSubStatus: 'NOT_STARTED' | 'HANDOVER_IN_PROGRESS' | 'HANDOVER_COMPLETED' = 'HANDOVER_IN_PROGRESS';
+
+      if (allHandedOver && allReceived) {
+        nextParentStatus = 'PRODUCTION_IN_PROGRESS';
+        handoverSubStatus = 'HANDOVER_COMPLETED';
+      } else if (allHandedOver) {
+        nextParentStatus = 'HANDED_OVER';
+        handoverSubStatus = 'HANDOVER_IN_PROGRESS';
+      } else {
+        nextParentStatus = 'READY_FOR_PRODUCTION_HANDOVER';
+        handoverSubStatus = 'HANDOVER_IN_PROGRESS';
+      }
+
+      const handoverProgress = {
+        total,
+        handedOverCount,
+        productionReceivedCount,
+        pendingHandoverCount: total - handedOverCount,
+        awaitingProductionReceiptCount: handedOverCount - productionReceivedCount,
+        percent: total > 0 ? Math.round((handedOverCount / total) * 100) : 0
+      };
+
+      // Transaction update
+      transaction.update(batchRef, sanitizeForFirestore({
+        batchSheets,
+        status: nextParentStatus,
+        handoverSubStatus,
+        handoverProgress,
+        updatedAt: nowIso,
+        updatedBy: user.uid
+      }));
+
+      // Audit logs for each sheet
+      for (const sheet of toProcess) {
+        await AuditService.logAction(
+          user.uid,
+          user.email,
+          "HANDOVER_TO_PRODUCTION",
+          batchId,
+          "PRODUCTION_BATCH",
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, handoverStatus: "PENDING_HANDOVER" },
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, requestId: batchData.batchNumber || batchId, handoverStatus: "HANDED_OVER_TO_PRODUCTION", currentCustody: sheet.currentCustody },
+          changeReason || `Batch sheet ${sheet.batchNumber} handed over to Production`,
+          transaction,
+          sig.id,
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          user.branch,
+          batchData.branch,
+          userRole,
+          userName
+        );
+      }
+
+      // Aggregate audit log
+      await AuditService.logAction(
+        user.uid,
+        user.email,
+        "HANDOVER_SELECTED",
+        batchId,
+        "PRODUCTION_BATCH",
+        { totalSelected: toProcess.length },
+        { 
+          totalSelected: toProcess.length, 
+          selectedBatchNumbers: toProcess.map(s => s.batchNumber),
+          remainingPending: total - handedOverCount,
+          handoverProgress
+        },
+        changeReason || `QA handed over ${toProcess.length} batch sheet(s) to Production`,
+        transaction,
+        sig.id,
+        signatureMeaning,
+        metadata?.ip,
+        metadata?.userAgent,
+        user.branch,
+        batchData.branch,
+        userRole,
+        userName
+      );
+
+      return {
+        success: true,
+        batchId,
+        selectedCount: toProcess.length,
+        handedOverCount,
+        total,
+        allHandedOver,
+        nextParentStatus,
+        handoverProgress
+      };
+    });
+  }
+
+  /**
+   * Production Receipt of one or more handed-over Batch Sheets.
+   * GATE 1: Only when ALL sheets are handed over AND received by production does batch advance to PRODUCTION_IN_PROGRESS!
+   */
+  static async productionReceiveBatchSheets(
+    batchId: string,
+    sheetIds: string[],
+    changeReason: string,
+    user: any,
+    signaturePassword?: string,
+    metadata?: any
+  ) {
+    await ensureAuth();
+
+    if (signaturePassword) {
+      await SignatureService.verifyCredentials(user.email, signaturePassword);
+    }
+
+    if (!Array.isArray(sheetIds) || sheetIds.length === 0) {
+      throw new Error("At least one Batch Sheet must be selected for Production Receipt.");
+    }
+
+    const baseRole = getUserBaseRole(user);
+    const userPerms = user.permissions || [];
+    const isAuthorized = baseRole === 'ADMIN' || baseRole === 'PRODUCTION_MANAGER' || baseRole === 'OPERATOR' ||
+      userPerms.some((p: string) => ['op:production_in_progress', 'batch:sign', 'batch:create', 'batch:edit'].includes(p));
+
+    if (!isAuthorized) {
+      throw new Error("Unauthorized: Only Production personnel or Admin can accept custody of Batch Sheets.");
+    }
+
+    const batchRef = doc(db, "production_batches", batchId);
+
+    return await runTransaction(db, async (transaction) => {
+      const batchSnap = await transaction.get(batchRef);
+      if (!batchSnap.exists()) {
+        throw new Error("Batch record not found.");
+      }
+
+      const batchData = batchSnap.data() as BatchIssuance & { branch?: string };
+
+      if (user.branch && batchData.branch && user.branch !== batchData.branch && baseRole !== 'ADMIN') {
+        throw new Error("Unauthorized: You do not have access to this branch's batch records.");
+      }
+
+      const batchSheets = initializeBatchSheets(batchData);
+      const selected = batchSheets.filter(s => sheetIds.includes(s.id) || sheetIds.includes(s.batchNumber));
+
+      if (selected.length === 0) {
+        throw new Error("None of the specified Batch Sheets were found in this batch.");
+      }
+
+      // Verify each selected sheet
+      const eligibleToReceive = selected.filter(sheet => {
+        return sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' && sheet.productionReceiptStatus !== 'RECEIVED_BY_PRODUCTION';
+      });
+
+      if (eligibleToReceive.length === 0) {
+        for (const sheet of selected) {
+          if (sheet.handoverStatus !== 'HANDED_OVER_TO_PRODUCTION') {
+            throw new Error(`Sheet ${sheet.batchNumber} has not yet been handed over by QA. Production receipt denied.`);
+          }
+          if (sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') {
+            throw new Error(`Sheet ${sheet.batchNumber} has already been received by Production.`);
+          }
+        }
+        throw new Error("None of the selected Batch Sheets are currently awaiting Production receipt.");
+      }
+
+      const toProcess = eligibleToReceive;
+
+      const signatureMeaning = `Physical and Digital Batch Sheet Custody Receipt by Production for ${toProcess.length} Sheet(s)`;
+      const sig = await SignatureService.signAction(
+        user.uid,
+        user.email,
+        "PRODUCTION_RECEIVE",
+        "PRODUCTION_BATCH",
+        batchId,
+        signatureMeaning,
+        metadata?.ip || "unknown",
+        metadata?.userAgent || "internal",
+        transaction
+      );
+
+      const nowIso = new Date().toISOString();
+      const userName = user.displayName || user.username || user.email || 'Production Lead';
+      const userEmployeeId = user.employeeId || 'N/A';
+      const userRole = user.role || 'PRODUCTION_MANAGER';
+
+      toProcess.forEach(sheet => {
+        sheet.productionReceiptStatus = 'RECEIVED_BY_PRODUCTION';
+        sheet.receivedByProduction = user.uid;
+        sheet.productionReceivedByName = userName;
+        sheet.productionReceivedByRole = userRole;
+        sheet.productionReceivedByEmployeeId = userEmployeeId;
+        sheet.productionReceivedAt = nowIso;
+        sheet.productionReceiptSignatureId = sig.id;
+        sheet.productionStatus = 'IN_PROGRESS';
+        sheet.currentCustody = 'Production';
+        sheet.currentOperationalState = 'PRODUCTION_IN_PROGRESS';
+
+        const historyEntry: BatchSheetPrintHistoryEntry = {
+          id: `hist-pr-${sheet.id}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          action: 'RECEIVED_BY_PRODUCTION' as any,
+          status: 'RECEIVED_BY_PRODUCTION' as any,
+          timestamp: nowIso,
+          performedBy: userName,
+          userId: user.uid,
+          userEmail: user.email,
+          userRole: userRole,
+          employeeId: userEmployeeId,
+          reason: changeReason || `Batch sheet custody received by Production personnel (${userName})`,
+          signatureId: sig.id,
+          signatureMeaning
+        };
+        sheet.history = [...(sheet.history || []), historyEntry];
+      });
+
+      // Recalculate parent state and GATE 1 check
+      const total = batchSheets.length;
+      const handedOverCount = batchSheets.filter(s => s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION').length;
+      const productionReceivedCount = batchSheets.filter(s => s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION').length;
+      const isGate1Completed = handedOverCount === total && productionReceivedCount === total;
+
+      let nextParentStatus = batchData.status;
+      let handoverSubStatus: 'NOT_STARTED' | 'HANDOVER_IN_PROGRESS' | 'HANDOVER_COMPLETED' = 'HANDOVER_IN_PROGRESS';
+
+      if (isGate1Completed) {
+        nextParentStatus = 'PRODUCTION_IN_PROGRESS';
+        handoverSubStatus = 'HANDOVER_COMPLETED';
+      } else if (handedOverCount === total) {
+        nextParentStatus = 'HANDED_OVER';
+        handoverSubStatus = 'HANDOVER_IN_PROGRESS';
+      } else {
+        nextParentStatus = 'READY_FOR_PRODUCTION_HANDOVER';
+        handoverSubStatus = 'HANDOVER_IN_PROGRESS';
+      }
+
+      const handoverProgress = {
+        total,
+        handedOverCount,
+        productionReceivedCount,
+        pendingHandoverCount: total - handedOverCount,
+        awaitingProductionReceiptCount: handedOverCount - productionReceivedCount,
+        percent: total > 0 ? Math.round((productionReceivedCount / total) * 100) : 0
+      };
+
+      transaction.update(batchRef, sanitizeForFirestore({
+        batchSheets,
+        status: nextParentStatus,
+        handoverSubStatus,
+        handoverProgress,
+        updatedAt: nowIso,
+        updatedBy: user.uid
+      }));
+
+      // Audit logs for each sheet
+      for (const sheet of selected) {
+        await AuditService.logAction(
+          user.uid,
+          user.email,
+          "RECEIVED_BY_PRODUCTION",
+          batchId,
+          "PRODUCTION_BATCH",
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, productionReceiptStatus: "AWAITING_PRODUCTION_RECEIPT" },
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, requestId: batchData.batchNumber || batchId, productionReceiptStatus: "RECEIVED_BY_PRODUCTION", currentCustody: sheet.currentCustody },
+          changeReason || `Batch sheet ${sheet.batchNumber} received by Production`,
+          transaction,
+          sig.id,
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          user.branch,
+          batchData.branch,
+          userRole,
+          userName
+        );
+      }
+
+      // Aggregate audit log
+      await AuditService.logAction(
+        user.uid,
+        user.email,
+        "PRODUCTION_RECEIPT_SELECTED",
+        batchId,
+        "PRODUCTION_BATCH",
+        { totalSelected: selected.length },
+        { 
+          totalSelected: selected.length, 
+          selectedBatchNumbers: selected.map(s => s.batchNumber),
+          productionReceivedCount,
+          isGate1Completed,
+          nextParentStatus
+        },
+        changeReason || `Production accepted custody for ${selected.length} batch sheet(s)`,
+        transaction,
+        sig.id,
+        signatureMeaning,
+        metadata?.ip,
+        metadata?.userAgent,
+        user.branch,
+        batchData.branch,
+        userRole,
+        userName
+      );
+
+      if (isGate1Completed) {
+        await AuditService.logAction(
+          user.uid,
+          user.email,
+          "PRODUCTION_RECEIPT_STAGE_COMPLETED",
+          batchId,
+          "PRODUCTION_BATCH",
+          { status: batchData.status },
+          { status: "PRODUCTION_IN_PROGRESS", totalSheets: total },
+          `Gate 1 Cleared: All ${total} Batch Sheets handed over and received by Production. Workflow advanced to PRODUCTION_IN_PROGRESS.`,
+          transaction,
+          sig.id,
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          user.branch,
+          batchData.branch,
+          userRole,
+          userName
+        );
+      }
+
+      return {
+        success: true,
+        batchId,
+        selectedCount: selected.length,
+        productionReceivedCount,
+        total,
+        isGate1Completed,
+        nextParentStatus,
+        handoverProgress
+      };
+    });
+  }
+
+  /**
+   * Production sends selected eligible Batch Sheets back for QA Review.
+   */
+  static async sendBatchSheetsForQaReview(
+    batchId: string,
+    sheetIds: string[],
+    changeReason: string,
+    user: any,
+    signaturePassword?: string,
+    metadata?: any
+  ) {
+    await ensureAuth();
+
+    if (signaturePassword) {
+      await SignatureService.verifyCredentials(user.email, signaturePassword);
+    }
+
+    if (!Array.isArray(sheetIds) || sheetIds.length === 0) {
+      throw new Error("At least one Batch Sheet must be selected to send for QA review.");
+    }
+
+    const baseRole = getUserBaseRole(user);
+    const userPerms = user.permissions || [];
+    const isAuthorized = baseRole === 'ADMIN' || baseRole === 'PRODUCTION_MANAGER' || baseRole === 'OPERATOR' ||
+      userPerms.some((p: string) => ['op:ready_for_qa_review', 'batch:sign', 'batch:edit'].includes(p));
+
+    if (!isAuthorized) {
+      throw new Error("Unauthorized: Only Production personnel or Admin can send Batch Sheets for QA Review.");
+    }
+
+    const batchRef = doc(db, "production_batches", batchId);
+
+    return await runTransaction(db, async (transaction) => {
+      const batchSnap = await transaction.get(batchRef);
+      if (!batchSnap.exists()) {
+        throw new Error("Batch record not found.");
+      }
+
+      const batchData = batchSnap.data() as BatchIssuance & { branch?: string };
+
+      if (user.branch && batchData.branch && user.branch !== batchData.branch && baseRole !== 'ADMIN') {
+        throw new Error("Unauthorized: You do not have access to this branch's batch records.");
+      }
+
+      const batchSheets = initializeBatchSheets(batchData);
+      const selected = batchSheets.filter(s => sheetIds.includes(s.id) || sheetIds.includes(s.batchNumber));
+
+      if (selected.length === 0) {
+        throw new Error("None of the specified Batch Sheets were found in this batch.");
+      }
+
+      for (const sheet of selected) {
+        const isHandedOver = sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' || sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION';
+        if (!isHandedOver) {
+          throw new Error(`Sheet ${sheet.batchNumber} has not been handed over to Production by QA yet.`);
+        }
+        if (sheet.qaReturnStatus === 'SENT_FOR_QA_REVIEW') {
+          throw new Error(`Sheet ${sheet.batchNumber} has already been sent for QA review.`);
+        }
+        if (sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED') {
+          throw new Error(`Sheet ${sheet.batchNumber} has already completed QA review.`);
+        }
+      }
+
+      const signatureMeaning = `Production Submission of ${selected.length} Batch Sheet(s) for QA Review`;
+      const sig = await SignatureService.signAction(
+        user.uid,
+        user.email,
+        "SENT_FOR_QA_REVIEW",
+        "PRODUCTION_BATCH",
+        batchId,
+        signatureMeaning,
+        metadata?.ip || "unknown",
+        metadata?.userAgent || "internal",
+        transaction
+      );
+
+      const nowIso = new Date().toISOString();
+      const userName = user.displayName || user.username || user.email || 'Production Lead';
+      const userEmployeeId = user.employeeId || 'N/A';
+      const userRole = user.role || 'PRODUCTION_MANAGER';
+
+      selected.forEach(sheet => {
+        if (sheet.productionReceiptStatus !== 'RECEIVED_BY_PRODUCTION') {
+          sheet.productionReceiptStatus = 'RECEIVED_BY_PRODUCTION';
+          sheet.productionReceivedAt = sheet.productionReceivedAt || nowIso;
+          sheet.receivedByProduction = sheet.receivedByProduction || user.uid;
+          sheet.productionReceivedByName = sheet.productionReceivedByName || userName;
+          sheet.productionReceivedByRole = sheet.productionReceivedByRole || userRole;
+          sheet.productionReceivedByEmployeeId = sheet.productionReceivedByEmployeeId || userEmployeeId;
+        }
+
+        sheet.qaReturnStatus = 'SENT_FOR_QA_REVIEW';
+        sheet.sentForQaReviewBy = user.uid;
+        sheet.sentForQaReviewByName = userName;
+        sheet.sentForQaReviewByRole = userRole;
+        sheet.sentForQaReviewByEmployeeId = userEmployeeId;
+        sheet.sentForQaReviewAt = nowIso;
+        sheet.sentForQaReviewSignatureId = sig.id;
+        sheet.qaReceiptStatus = 'AWAITING_QA_RECEIPT';
+        sheet.qaReviewStatus = 'PENDING_RECEIPT';
+        sheet.productionStatus = 'READY_FOR_QA_REVIEW';
+        sheet.currentCustody = 'QA – Awaiting Receipt';
+        sheet.currentOperationalState = 'SENT_FOR_QA_REVIEW';
+
+        const historyEntry: BatchSheetPrintHistoryEntry = {
+          id: `hist-sqa-${sheet.id}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          action: 'SENT_FOR_QA_REVIEW' as any,
+          status: 'SENT_FOR_QA_REVIEW' as any,
+          timestamp: nowIso,
+          performedBy: userName,
+          userId: user.uid,
+          userEmail: user.email,
+          userRole: userRole,
+          employeeId: userEmployeeId,
+          reason: changeReason || `Batch sheet completed by Production and sent for QA Review`,
+          signatureId: sig.id,
+          signatureMeaning
+        };
+        sheet.history = [...(sheet.history || []), historyEntry];
+      });
+
+      const total = batchSheets.length;
+      const sentForReviewCount = batchSheets.filter(s => s.qaReturnStatus === 'SENT_FOR_QA_REVIEW').length;
+      const qaReceivedCount = batchSheets.filter(s => s.qaReceiptStatus === 'RECEIVED_BY_QA').length;
+      const reviewedCount = batchSheets.filter(s => s.qaReviewStatus === 'QA_REVIEW_COMPLETED').length;
+      const allSent = sentForReviewCount === total;
+
+      let nextParentStatus = batchData.status;
+      if (allSent) {
+        nextParentStatus = 'READY_FOR_QA_REVIEW';
+      }
+
+      const qaReviewProgress = {
+        total,
+        sentForReviewCount,
+        qaReceivedCount,
+        reviewedCount,
+        stillInProductionCount: total - sentForReviewCount,
+        percent: total > 0 ? Math.round((reviewedCount / total) * 100) : 0
+      };
+
+      transaction.update(batchRef, sanitizeForFirestore({
+        batchSheets,
+        status: nextParentStatus,
+        qaReviewSubStatus: 'QA_REVIEW_IN_PROGRESS',
+        qaReviewProgress,
+        updatedAt: nowIso,
+        updatedBy: user.uid
+      }));
+
+      for (const sheet of selected) {
+        await AuditService.logAction(
+          user.uid,
+          user.email,
+          "SENT_FOR_QA_REVIEW",
+          batchId,
+          "PRODUCTION_BATCH",
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, qaReturnStatus: "NOT_SENT" },
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, requestId: batchData.batchNumber || batchId, qaReturnStatus: "SENT_FOR_QA_REVIEW", currentCustody: sheet.currentCustody },
+          changeReason || `Batch sheet ${sheet.batchNumber} sent for QA Review`,
+          transaction,
+          sig.id,
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          user.branch,
+          batchData.branch,
+          userRole,
+          userName
+        );
+      }
+
+      await AuditService.logAction(
+        user.uid,
+        user.email,
+        "SEND_FOR_QA_REVIEW_SELECTED",
+        batchId,
+        "PRODUCTION_BATCH",
+        { totalSelected: selected.length },
+        { 
+          totalSelected: selected.length, 
+          selectedBatchNumbers: selected.map(s => s.batchNumber),
+          sentForReviewCount,
+          allSent
+        },
+        changeReason || `Production submitted ${selected.length} batch sheet(s) for QA Review`,
+        transaction,
+        sig.id,
+        signatureMeaning,
+        metadata?.ip,
+        metadata?.userAgent,
+        user.branch,
+        batchData.branch,
+        userRole,
+        userName
+      );
+
+      return {
+        success: true,
+        batchId,
+        selectedCount: selected.length,
+        sentForReviewCount,
+        total,
+        allSent,
+        nextParentStatus,
+        qaReviewProgress
+      };
+    });
+  }
+
+  /**
+   * QA Department physical and digital receipt of selected Batch Sheets.
+   */
+  static async qaReceiveBatchSheets(
+    batchId: string,
+    sheetIds: string[],
+    changeReason: string,
+    user: any,
+    signaturePassword?: string,
+    metadata?: any
+  ) {
+    await ensureAuth();
+
+    if (signaturePassword) {
+      await SignatureService.verifyCredentials(user.email, signaturePassword);
+    }
+
+    if (!Array.isArray(sheetIds) || sheetIds.length === 0) {
+      throw new Error("At least one Batch Sheet must be selected for QA Receipt.");
+    }
+
+    const baseRole = getUserBaseRole(user);
+    const userPerms = user.permissions || [];
+    const isAuthorized = baseRole === 'ADMIN' || baseRole === 'QA' ||
+      userPerms.some((p: string) => ['op:completed', 'batch:approve', 'batch:review'].includes(p));
+
+    if (!isAuthorized) {
+      throw new Error("Unauthorized: Only QA personnel or Admin can receive Batch Sheets for QA review.");
+    }
+
+    const batchRef = doc(db, "production_batches", batchId);
+
+    return await runTransaction(db, async (transaction) => {
+      const batchSnap = await transaction.get(batchRef);
+      if (!batchSnap.exists()) {
+        throw new Error("Batch record not found.");
+      }
+
+      const batchData = batchSnap.data() as BatchIssuance & { branch?: string };
+
+      if (user.branch && batchData.branch && user.branch !== batchData.branch && baseRole !== 'ADMIN') {
+        throw new Error("Unauthorized: You do not have access to this branch's batch records.");
+      }
+
+      const batchSheets = initializeBatchSheets(batchData);
+      const selected = batchSheets.filter(s => sheetIds.includes(s.id) || sheetIds.includes(s.batchNumber));
+
+      if (selected.length === 0) {
+        throw new Error("None of the specified Batch Sheets were found in this batch.");
+      }
+
+      for (const sheet of selected) {
+        if (sheet.qaReturnStatus !== 'SENT_FOR_QA_REVIEW') {
+          throw new Error(`Sheet ${sheet.batchNumber} has not yet been submitted by Production for QA review.`);
+        }
+        if (sheet.qaReceiptStatus === 'RECEIVED_BY_QA') {
+          throw new Error(`Sheet ${sheet.batchNumber} has already been received by QA.`);
+        }
+      }
+
+      const signatureMeaning = `QA Department Physical and Digital Receipt of ${selected.length} Batch Sheet(s) for Review`;
+      const sig = await SignatureService.signAction(
+        user.uid,
+        user.email,
+        "RECEIVED_BY_QA",
+        "PRODUCTION_BATCH",
+        batchId,
+        signatureMeaning,
+        metadata?.ip || "unknown",
+        metadata?.userAgent || "internal",
+        transaction
+      );
+
+      const nowIso = new Date().toISOString();
+      const userName = user.displayName || user.username || user.email || 'QA Reviewer';
+      const userEmployeeId = user.employeeId || 'N/A';
+      const userRole = user.role || 'QA';
+
+      selected.forEach(sheet => {
+        sheet.qaReceiptStatus = 'RECEIVED_BY_QA';
+        sheet.receivedByQa = user.uid;
+        sheet.qaReceivedByName = userName;
+        sheet.qaReceivedByRole = userRole;
+        sheet.qaReceivedByEmployeeId = userEmployeeId;
+        sheet.qaReceivedAt = nowIso;
+        sheet.qaReceiptSignatureId = sig.id;
+        sheet.qaReviewStatus = 'RECEIVED';
+        sheet.currentCustody = 'QA – Under Review';
+        sheet.currentOperationalState = 'QA_RECEIVED_UNDER_REVIEW';
+
+        const historyEntry: BatchSheetPrintHistoryEntry = {
+          id: `hist-qar-${sheet.id}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          action: 'RECEIVED_BY_QA' as any,
+          status: 'RECEIVED_BY_QA' as any,
+          timestamp: nowIso,
+          performedBy: userName,
+          userId: user.uid,
+          userEmail: user.email,
+          userRole: userRole,
+          employeeId: userEmployeeId,
+          reason: changeReason || `Batch sheet received by QA for review`,
+          signatureId: sig.id,
+          signatureMeaning
+        };
+        sheet.history = [...(sheet.history || []), historyEntry];
+      });
+
+      const total = batchSheets.length;
+      const sentForReviewCount = batchSheets.filter(s => s.qaReturnStatus === 'SENT_FOR_QA_REVIEW').length;
+      const qaReceivedCount = batchSheets.filter(s => s.qaReceiptStatus === 'RECEIVED_BY_QA').length;
+      const reviewedCount = batchSheets.filter(s => s.qaReviewStatus === 'QA_REVIEW_COMPLETED').length;
+
+      const qaReviewProgress = {
+        total,
+        sentForReviewCount,
+        qaReceivedCount,
+        reviewedCount,
+        stillInProductionCount: total - sentForReviewCount,
+        percent: total > 0 ? Math.round((reviewedCount / total) * 100) : 0
+      };
+
+      transaction.update(batchRef, sanitizeForFirestore({
+        batchSheets,
+        qaReviewProgress,
+        updatedAt: nowIso,
+        updatedBy: user.uid
+      }));
+
+      for (const sheet of selected) {
+        await AuditService.logAction(
+          user.uid,
+          user.email,
+          "RECEIVED_BY_QA",
+          batchId,
+          "PRODUCTION_BATCH",
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, qaReceiptStatus: "AWAITING_QA_RECEIPT" },
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, requestId: batchData.batchNumber || batchId, qaReceiptStatus: "RECEIVED_BY_QA", currentCustody: sheet.currentCustody },
+          changeReason || `Batch sheet ${sheet.batchNumber} received by QA for review`,
+          transaction,
+          sig.id,
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          user.branch,
+          batchData.branch,
+          userRole,
+          userName
+        );
+      }
+
+      await AuditService.logAction(
+        user.uid,
+        user.email,
+        "QA_RECEIPT_SELECTED",
+        batchId,
+        "PRODUCTION_BATCH",
+        { totalSelected: selected.length },
+        { 
+          totalSelected: selected.length, 
+          selectedBatchNumbers: selected.map(s => s.batchNumber),
+          qaReceivedCount
+        },
+        changeReason || `QA accepted custody of ${selected.length} batch sheet(s) for review`,
+        transaction,
+        sig.id,
+        signatureMeaning,
+        metadata?.ip,
+        metadata?.userAgent,
+        user.branch,
+        batchData.branch,
+        userRole,
+        userName
+      );
+
+      return {
+        success: true,
+        batchId,
+        selectedCount: selected.length,
+        qaReceivedCount,
+        total,
+        qaReviewProgress
+      };
+    });
+  }
+
+  /**
+   * QA reviews and completes certification of selected Batch Sheets.
+   * GATE 2: Only when ALL sheets are reviewed and certified does parent batch advance to COMPLETED!
+   */
+  static async completeQaReviewForBatchSheets(
+    batchId: string,
+    sheetIds: string[],
+    changeReason: string,
+    user: any,
+    signaturePassword?: string,
+    metadata?: any
+  ) {
+    await ensureAuth();
+
+    if (signaturePassword) {
+      await SignatureService.verifyCredentials(user.email, signaturePassword);
+    }
+
+    if (!Array.isArray(sheetIds) || sheetIds.length === 0) {
+      throw new Error("At least one Batch Sheet must be selected to complete QA Review.");
+    }
+
+    const baseRole = getUserBaseRole(user);
+    const userPerms = user.permissions || [];
+    const isAuthorized = baseRole === 'ADMIN' || baseRole === 'QA' ||
+      userPerms.some((p: string) => ['op:completed', 'batch:approve'].includes(p));
+
+    if (!isAuthorized) {
+      throw new Error("Unauthorized: Only QA personnel or Admin can complete QA Review for Batch Sheets.");
+    }
+
+    const batchRef = doc(db, "production_batches", batchId);
+
+    return await runTransaction(db, async (transaction) => {
+      const batchSnap = await transaction.get(batchRef);
+      if (!batchSnap.exists()) {
+        throw new Error("Batch record not found.");
+      }
+
+      const batchData = batchSnap.data() as BatchIssuance & { branch?: string };
+
+      if (user.branch && batchData.branch && user.branch !== batchData.branch && baseRole !== 'ADMIN') {
+        throw new Error("Unauthorized: You do not have access to this branch's batch records.");
+      }
+
+      const batchSheets = initializeBatchSheets(batchData);
+      const selected = batchSheets.filter(s => sheetIds.includes(s.id) || sheetIds.includes(s.batchNumber));
+
+      if (selected.length === 0) {
+        throw new Error("None of the specified Batch Sheets were found in this batch.");
+      }
+
+      for (const sheet of selected) {
+        if (sheet.qaReceiptStatus !== 'RECEIVED_BY_QA') {
+          throw new Error(`Sheet ${sheet.batchNumber} has not yet been received by QA. QA review cannot be completed.`);
+        }
+        if (sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED') {
+          throw new Error(`Sheet ${sheet.batchNumber} has already completed QA review.`);
+        }
+      }
+
+      const signatureMeaning = `QA Review and Compliance Certification of ${selected.length} Batch Sheet(s)`;
+      const sig = await SignatureService.signAction(
+        user.uid,
+        user.email,
+        "QA_REVIEW_COMPLETED",
+        "PRODUCTION_BATCH",
+        batchId,
+        signatureMeaning,
+        metadata?.ip || "unknown",
+        metadata?.userAgent || "internal",
+        transaction
+      );
+
+      const nowIso = new Date().toISOString();
+      const userName = user.displayName || user.username || user.email || 'QA Reviewer';
+      const userEmployeeId = user.employeeId || 'N/A';
+      const userRole = user.role || 'QA';
+
+      selected.forEach(sheet => {
+        sheet.qaReviewStatus = 'QA_REVIEW_COMPLETED';
+        sheet.qaReviewedBy = user.uid;
+        sheet.qaReviewedByName = userName;
+        sheet.qaReviewedByRole = userRole;
+        sheet.qaReviewedByEmployeeId = userEmployeeId;
+        sheet.qaReviewedAt = nowIso;
+        sheet.qaReviewSignatureId = sig.id;
+        sheet.currentCustody = 'QA – Reviewed';
+        sheet.currentOperationalState = 'QA_REVIEW_COMPLETED';
+
+        const historyEntry: BatchSheetPrintHistoryEntry = {
+          id: `hist-qac-${sheet.id}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          action: 'QA_REVIEW_COMPLETED' as any,
+          status: 'QA_REVIEW_COMPLETED' as any,
+          timestamp: nowIso,
+          performedBy: userName,
+          userId: user.uid,
+          userEmail: user.email,
+          userRole: userRole,
+          employeeId: userEmployeeId,
+          reason: changeReason || `Batch sheet QA review certified and completed`,
+          signatureId: sig.id,
+          signatureMeaning
+        };
+        sheet.history = [...(sheet.history || []), historyEntry];
+      });
+
+      const total = batchSheets.length;
+      const sentForReviewCount = batchSheets.filter(s => s.qaReturnStatus === 'SENT_FOR_QA_REVIEW').length;
+      const qaReceivedCount = batchSheets.filter(s => s.qaReceiptStatus === 'RECEIVED_BY_QA').length;
+      const reviewedCount = batchSheets.filter(s => s.qaReviewStatus === 'QA_REVIEW_COMPLETED').length;
+      const isGate2Completed = reviewedCount === total;
+
+      let nextParentStatus = batchData.status;
+      let qaReviewSubStatus: 'NOT_STARTED' | 'QA_REVIEW_IN_PROGRESS' | 'QA_REVIEW_COMPLETED' = 'QA_REVIEW_IN_PROGRESS';
+
+      if (isGate2Completed) {
+        nextParentStatus = 'COMPLETED';
+        qaReviewSubStatus = 'QA_REVIEW_COMPLETED';
+      }
+
+      const qaReviewProgress = {
+        total,
+        sentForReviewCount,
+        qaReceivedCount,
+        reviewedCount,
+        stillInProductionCount: total - sentForReviewCount,
+        percent: total > 0 ? Math.round((reviewedCount / total) * 100) : 0
+      };
+
+      const updatePayload: any = {
+        batchSheets,
+        status: nextParentStatus,
+        qaReviewSubStatus,
+        qaReviewProgress,
+        updatedAt: nowIso,
+        updatedBy: user.uid
+      };
+
+      if (isGate2Completed) {
+        updatePayload.completedAt = nowIso;
+        updatePayload.completedBy = user.uid;
+        updatePayload.completedByName = userName;
+        updatePayload.completedByRole = userRole;
+        updatePayload.completedByEmployeeId = userEmployeeId;
+      }
+
+      transaction.update(batchRef, sanitizeForFirestore(updatePayload));
+
+      for (const sheet of selected) {
+        await AuditService.logAction(
+          user.uid,
+          user.email,
+          "QA_REVIEW_COMPLETED",
+          batchId,
+          "PRODUCTION_BATCH",
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, qaReviewStatus: "RECEIVED" },
+          { sheetId: sheet.id, batchNumber: sheet.batchNumber, requestId: batchData.batchNumber || batchId, qaReviewStatus: "QA_REVIEW_COMPLETED", currentCustody: sheet.currentCustody },
+          changeReason || `Batch sheet ${sheet.batchNumber} QA review completed`,
+          transaction,
+          sig.id,
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          user.branch,
+          batchData.branch,
+          userRole,
+          userName
+        );
+      }
+
+      await AuditService.logAction(
+        user.uid,
+        user.email,
+        "QA_REVIEW_SELECTED",
+        batchId,
+        "PRODUCTION_BATCH",
+        { totalSelected: selected.length },
+        { 
+          totalSelected: selected.length, 
+          selectedBatchNumbers: selected.map(s => s.batchNumber),
+          reviewedCount,
+          isGate2Completed,
+          nextParentStatus
+        },
+        changeReason || `QA completed review for ${selected.length} batch sheet(s)`,
+        transaction,
+        sig.id,
+        signatureMeaning,
+        metadata?.ip,
+        metadata?.userAgent,
+        user.branch,
+        batchData.branch,
+        userRole,
+        userName
+      );
+
+      if (isGate2Completed) {
+        await AuditService.logAction(
+          user.uid,
+          user.email,
+          "QA_REVIEW_STAGE_COMPLETED",
+          batchId,
+          "PRODUCTION_BATCH",
+          { status: batchData.status },
+          { status: "COMPLETED", totalSheets: total },
+          `Gate 2 Cleared: All ${total} Batch Sheets reviewed and certified by QA. Batch issuance completed.`,
+          transaction,
+          sig.id,
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          user.branch,
+          batchData.branch,
+          userRole,
+          userName
+        );
+      }
+
+      return {
+        success: true,
+        batchId,
+        selectedCount: selected.length,
+        reviewedCount,
+        total,
+        isGate2Completed,
+        nextParentStatus,
+        qaReviewProgress
+      };
+    });
   }
 
   static async getBatchTimeline(id: string) {

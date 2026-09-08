@@ -186,6 +186,27 @@ export class BatchController {
     }
   }
 
+  static async logPrintAction(req: AuthRequest, res: Response) {
+    try {
+      const batch = await BatchIssuanceService.getBatchById(req.params.id);
+      if (batch && !hasBranchAccess(req, (batch as any).branch)) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const { action, details } = req.body;
+      const result = await BatchIssuanceService.logPrintAction(
+        req.params.id,
+        req.params.sheetId,
+        action,
+        req.user,
+        details,
+        req.metadata
+      );
+      res.json({ success: true, data: result, message: "Print action logged successfully" });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
   static async getPrintQueue(req: AuthRequest, res: Response) {
     try {
       const batch = await BatchIssuanceService.getBatchById(req.params.id);
@@ -306,6 +327,111 @@ export class BatchController {
       res.json({ success: true, data: timeline });
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  static async handoverSheets(req: AuthRequest, res: Response) {
+    try {
+      const batch = await BatchIssuanceService.getBatchById(req.params.id);
+      if (batch && !hasBranchAccess(req, (batch as any).branch)) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const { sheetIds, changeReason, password, signaturePassword } = req.body;
+      const result = await BatchIssuanceService.handoverBatchSheets(
+        req.params.id,
+        sheetIds,
+        changeReason,
+        req.user,
+        signaturePassword || password,
+        req.metadata
+      );
+      res.json({ success: true, data: result, message: "Selected Batch Sheets successfully handed over to Production" });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async productionReceiveSheets(req: AuthRequest, res: Response) {
+    try {
+      const batch = await BatchIssuanceService.getBatchById(req.params.id);
+      if (batch && !hasBranchAccess(req, (batch as any).branch)) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const { sheetIds, changeReason, password, signaturePassword } = req.body;
+      const result = await BatchIssuanceService.productionReceiveBatchSheets(
+        req.params.id,
+        sheetIds,
+        changeReason,
+        req.user,
+        signaturePassword || password,
+        req.metadata
+      );
+      res.json({ success: true, data: result, message: "Selected Batch Sheets received by Production" });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async sendSheetsForQaReview(req: AuthRequest, res: Response) {
+    try {
+      const batch = await BatchIssuanceService.getBatchById(req.params.id);
+      if (batch && !hasBranchAccess(req, (batch as any).branch)) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const { sheetIds, changeReason, password, signaturePassword } = req.body;
+      const result = await BatchIssuanceService.sendBatchSheetsForQaReview(
+        req.params.id,
+        sheetIds,
+        changeReason,
+        req.user,
+        signaturePassword || password,
+        req.metadata
+      );
+      res.json({ success: true, data: result, message: "Selected Batch Sheets sent for QA Review" });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async qaReceiveSheets(req: AuthRequest, res: Response) {
+    try {
+      const batch = await BatchIssuanceService.getBatchById(req.params.id);
+      if (batch && !hasBranchAccess(req, (batch as any).branch)) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const { sheetIds, changeReason, password, signaturePassword } = req.body;
+      const result = await BatchIssuanceService.qaReceiveBatchSheets(
+        req.params.id,
+        sheetIds,
+        changeReason,
+        req.user,
+        signaturePassword || password,
+        req.metadata
+      );
+      res.json({ success: true, data: result, message: "Selected Batch Sheets received by QA" });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async completeQaReviewSheets(req: AuthRequest, res: Response) {
+    try {
+      const batch = await BatchIssuanceService.getBatchById(req.params.id);
+      if (batch && !hasBranchAccess(req, (batch as any).branch)) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const { sheetIds, changeReason, password, signaturePassword } = req.body;
+      const result = await BatchIssuanceService.completeQaReviewForBatchSheets(
+        req.params.id,
+        sheetIds,
+        changeReason,
+        req.user,
+        signaturePassword || password,
+        req.metadata
+      );
+      res.json({ success: true, data: result, message: "Selected Batch Sheets QA Review completed" });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
     }
   }
 }

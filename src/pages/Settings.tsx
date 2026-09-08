@@ -15,6 +15,7 @@ const PERMISSIONS_CATEGORIES = [
     events: [
       { id: "create:product", name: "Create Product Master", desc: "Notification on creation of new product specifications" },
       { id: "edit:product", name: "Edit Product Master", desc: "Notification on changes made to active product masters" },
+      { id: "product:submit", name: "Submit Product Master", desc: "Notification when product master is submitted for GAMP review" },
       { id: "product:review", name: "Review Product Master", desc: "Notification when product master is submitted for review" },
       { id: "product:approve", name: "Approve Product Master", desc: "Notification when product master has been approved" }
     ]

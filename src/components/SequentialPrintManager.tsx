@@ -103,8 +103,9 @@ export function SequentialPrintManager({
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [selectedSheetForAudit, setSelectedSheetForAudit] = useState<BatchSheetItem | null>(null);
 
-  // Electronic Signature Password
+  // Electronic Signature Password & Comments
   const [signaturePassword, setSignaturePassword] = useState('');
+  const [printCompleteComments, setPrintCompleteComments] = useState('');
   const [loadingAction, setLoadingAction] = useState(false);
 
   // PDF Preview for individual sheet
@@ -254,18 +255,25 @@ export function SequentialPrintManager({
   // Open "Print Completed" confirmation step
   const handleOpenPrintCompletedConfirmation = () => {
     setIsPostPrintConfirmationOpen(false);
+    setSignaturePassword('');
+    setPrintCompleteComments('');
     setIsPrintCompletedConfirmOpen(true);
   };
 
-  // Final Confirmation of Print Completed
+  // Final Confirmation of Print Completed with 21 CFR Part 11 Electronic Signature
   const handleConfirmPrintCompleted = async () => {
     if (!activePrintingSheet) return;
+
+    if (!signaturePassword || !signaturePassword.trim()) {
+      toast.error('Password is required for 21 CFR Part 11 Electronic Signature.');
+      return;
+    }
 
     setLoadingAction(true);
     try {
       const res = await api.post(`/batches/${batch.id}/sheets/${activePrintingSheet.id}/complete-print`, {
         password: signaturePassword,
-        comments: 'Printed and physical output verified by operator.'
+        comments: printCompleteComments.trim() || 'Physical print output verified and approved by operator.'
       });
 
       if (res.data.success) {
@@ -273,11 +281,12 @@ export function SequentialPrintManager({
         setIsPrintCompletedConfirmOpen(false);
         setActivePrintingSheet(null);
         setSignaturePassword('');
+        setPrintCompleteComments('');
         await onBatchUpdated();
       }
     } catch (err: any) {
       console.error(err);
-      toast.error(err.response?.data?.message || 'Failed to complete print verification.');
+      toast.error(err.response?.data?.message || 'Electronic signature verification failed. Incorrect credentials.');
     } finally {
       setLoadingAction(false);
     }
@@ -796,27 +805,86 @@ export function SequentialPrintManager({
       </Dialog>
 
       {/* ------------------------------------------------------------- */}
-      {/* 2. Final "Print Completed" Confirmation Dialog                 */}
+      {/* 2. Final "Print Completed" Electronic Signature Dialog         */}
       {/* ------------------------------------------------------------- */}
       <Dialog open={isPrintCompletedConfirmOpen} onOpenChange={setIsPrintCompletedConfirmOpen}>
         <DialogContent className="sm:max-w-md rounded-3xl p-6 bg-white shadow-2xl border-none">
           <DialogHeader>
             <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center mb-2">
-              <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+              <ShieldCheck className="w-6 h-6 text-emerald-600" />
             </div>
             <DialogTitle className="text-xl font-bold text-slate-900">
-              Confirm Print Completed
+              Electronic Signature – Print Completed
             </DialogTitle>
-            <DialogDescription className="text-slate-600 font-medium pt-1 text-sm">
-              Confirm that Batch Sheet <strong>{activePrintingSheet?.batchNumber}</strong> has been printed/downloaded successfully and no pages require reprinting.
+            <DialogDescription className="text-slate-600 font-medium pt-1 text-xs">
+              21 CFR Part 11 & EU Annex 11 certified signature required to confirm satisfactory print output and unlock the next sequential Batch Sheet.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">
-            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs text-slate-600 space-y-1">
-              <div><strong>Batch Number:</strong> {activePrintingSheet?.batchNumber}</div>
-              <div><strong>Operator:</strong> {user?.displayName || user?.username || user?.email}</div>
-              <div><strong>Action:</strong> Unlock next sequential Batch Sheet</div>
+          <div className="space-y-3.5 py-2">
+            {/* Context Summary */}
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Batch Sheet:</span>
+                <span className="font-extrabold text-slate-900 font-mono">#{activePrintingSheet ? activePrintingSheet.sequenceIndex + 1 : 1} ({activePrintingSheet?.batchNumber})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Signer Identity:</span>
+                <span className="font-bold text-slate-800">{user?.displayName || user?.username || user?.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Role & ID:</span>
+                <span className="text-slate-700">{user?.role || 'ADMIN'} | {user?.employeeId || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-medium">Branch:</span>
+                <span className="text-slate-700">{(batch as any).branch || (user as any)?.branch || 'Masulkhana'}</span>
+              </div>
+            </div>
+
+            {/* Meaning of Signature */}
+            <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-2xl text-[11px] text-emerald-950 leading-relaxed font-medium">
+              <div className="font-bold flex items-center gap-1.5 mb-1 text-emerald-900">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Meaning of Signature:</span>
+              </div>
+              "I confirm that I have inspected the physical printed/downloaded Batch Sheet and verify that all required pages have been produced satisfactorily without defects."
+            </div>
+
+            {/* Password input */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                <span>Account Password <span className="text-rose-500">*</span></span>
+                <span className="text-[10px] text-slate-400 font-normal">Re-enter your password to sign</span>
+              </Label>
+              <Input
+                type="password"
+                value={signaturePassword}
+                onChange={(e) => setSignaturePassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && signaturePassword.trim() && !loadingAction) {
+                    e.preventDefault();
+                    handleConfirmPrintCompleted();
+                  }
+                }}
+                placeholder="Enter your login password"
+                className="rounded-xl border-slate-200 text-sm font-medium"
+                autoFocus
+              />
+            </div>
+
+            {/* Optional Comments */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">
+                Comments (Optional)
+              </Label>
+              <Textarea
+                value={printCompleteComments}
+                onChange={(e) => setPrintCompleteComments(e.target.value)}
+                placeholder="Physical output verified and approved..."
+                rows={2}
+                className="rounded-xl border-slate-200 text-xs"
+              />
             </div>
           </div>
 
@@ -825,6 +893,7 @@ export function SequentialPrintManager({
               type="button"
               variant="outline"
               onClick={() => setIsPrintCompletedConfirmOpen(false)}
+              disabled={loadingAction}
               className="w-full sm:w-auto rounded-2xl text-xs border-slate-200"
             >
               Cancel
@@ -832,11 +901,11 @@ export function SequentialPrintManager({
             <Button
               type="button"
               onClick={handleConfirmPrintCompleted}
-              disabled={loadingAction}
+              disabled={loadingAction || !signaturePassword.trim()}
               className="w-full sm:w-auto font-bold rounded-2xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               {loadingAction && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Confirm Print Completed
+              Sign & Complete Print
             </Button>
           </DialogFooter>
         </DialogContent>

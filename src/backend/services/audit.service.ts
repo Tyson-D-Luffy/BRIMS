@@ -241,6 +241,23 @@ export class AuditService {
       logEntry.newDepartment = newValue.department;
     }
 
+    // Capture Batch Process & Print specific metadata on the top-level log document
+    if (newValue) {
+      if (newValue.batchNumber) logEntry.batchNumber = newValue.batchNumber;
+      if (newValue.requestId) logEntry.requestId = newValue.requestId;
+      if (newValue.batchSheetRequestId) logEntry.batchSheetRequestId = newValue.batchSheetRequestId;
+      if (newValue.sheetId) logEntry.sheetId = newValue.sheetId;
+      if (newValue.printJobId) logEntry.printJobId = newValue.printJobId;
+      if (newValue.attemptNumber !== undefined) logEntry.attemptNumber = newValue.attemptNumber;
+      if (newValue.requestedPages) logEntry.requestedPages = newValue.requestedPages;
+      if (newValue.auditEventId) logEntry.auditEventId = newValue.auditEventId;
+    } else if (oldValue) {
+      if (oldValue.batchNumber) logEntry.batchNumber = oldValue.batchNumber;
+      if (oldValue.requestId) logEntry.requestId = oldValue.requestId;
+      if (oldValue.batchSheetRequestId) logEntry.batchSheetRequestId = oldValue.batchSheetRequestId;
+      if (oldValue.sheetId) logEntry.sheetId = oldValue.sheetId;
+    }
+
     // Clean up any undefined values recursively to avoid Firestore errors
     Object.keys(logEntry).forEach(key => {
       logEntry[key] = this.deepSanitize(logEntry[key]);
@@ -319,7 +336,7 @@ export class AuditService {
    */
   static async getLogsFromCollection(collectionName: "batch_process_audit_logs" | "system_admin_audit_logs", filters: any) {
     try {
-      const { userId, action, entityType, entityId, startDate, endDate, limit: limitVal = 100, selectedBranch, userEmail } = filters;
+      const { userId, action, entityType, entityId, startDate, endDate, limit: limitVal = 100, selectedBranch, userEmail, batchNumber, requestId, sheetId, search } = filters;
       let logs: any[] = [];
 
       try {
@@ -369,6 +386,30 @@ export class AuditService {
       }
       if (entityId) {
         logs = logs.filter((log: any) => (log.entityId || '').toLowerCase().includes(entityId.toLowerCase()));
+      }
+      if (batchNumber) {
+        logs = logs.filter((log: any) => (log.batchNumber || log.entityId || '').toLowerCase().includes(batchNumber.toLowerCase()));
+      }
+      if (requestId) {
+        logs = logs.filter((log: any) => (log.requestId || log.batchSheetRequestId || log.entityId || '').toLowerCase().includes(requestId.toLowerCase()));
+      }
+      if (sheetId) {
+        logs = logs.filter((log: any) => (log.sheetId || log.entityId || '').toLowerCase().includes(sheetId.toLowerCase()));
+      }
+      if (search) {
+        const searchLower = search.toLowerCase();
+        logs = logs.filter((log: any) => {
+          return (
+            (log.action || '').toLowerCase().includes(searchLower) ||
+            (log.entityId || '').toLowerCase().includes(searchLower) ||
+            (log.batchNumber || '').toLowerCase().includes(searchLower) ||
+            (log.requestId || '').toLowerCase().includes(searchLower) ||
+            (log.changeReason || '').toLowerCase().includes(searchLower) ||
+            (log.performedBy || '').toLowerCase().includes(searchLower) ||
+            (log.userEmail || '').toLowerCase().includes(searchLower) ||
+            (log.module || '').toLowerCase().includes(searchLower)
+          );
+        });
       }
       if (startDate) {
         logs = logs.filter((log: any) => log.timestamp >= startDate);

@@ -67,7 +67,6 @@ function getFallbackComplianceScan(branchName: string) {
     inspectionReadinessScore: 95,
     branchComparison: [
       { branchName: branchName || 'Masulkhana', score: 96, openIssues: 1, criticalIssues: 0 },
-      { branchName: 'Hyderabad Plant', score: 92, openIssues: 2, criticalIssues: 0 },
       { branchName: 'Baddi Unit-2', score: 98, openIssues: 0, criticalIssues: 0 }
     ]
   };
@@ -707,7 +706,6 @@ export class ComplianceGuardianService {
       inspectionReadinessScore: Math.min(100, Math.round((overallScore * 0.7) + (categoryScores.electronicRecords * 0.3))),
       branchComparison: [
         { branchName: 'Masulkhana', score: Math.min(100, overallScore + 1), openIssues: activeOpenFindings.length, criticalIssues: criticalCount },
-        { branchName: 'Hyderabad Plant', score: Math.max(82, overallScore - 4), openIssues: 3, criticalIssues: 0 },
         { branchName: 'Baddi Unit-2', score: 94, openIssues: 1, criticalIssues: 0 },
       ]
     };

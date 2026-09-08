@@ -4,6 +4,7 @@ import { authenticateToken, authorizeRoles } from "../middleware/auth.middleware
 import { enforceLock } from "../middleware/locking.middleware.ts";
 import { validate } from "../middleware/validate.middleware.ts";
 import { createRecordSchema, updateRecordSchema } from "../validations/batchSheetRecord.validation.ts";
+import { authorizeWorkflowTransition } from "../middleware/workflowAuth.middleware.ts";
 
 const router = Router();
 
@@ -26,14 +27,14 @@ router.get(
 router.get(
   "/:id/records",
   authenticateToken,
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA"]),
+  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]),
   BatchSheetRecordController.getByMasterId
 );
 
 router.get(
   "/:id/records/latest-approved",
   authenticateToken,
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA"]),
+  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]),
   BatchSheetRecordController.getLatestApproved
 );
 
@@ -41,7 +42,7 @@ router.get(
 router.get(
   "/:id",
   authenticateToken,
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA"]),
+  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]),
   BatchSheetRecordController.getById
 );
 
@@ -49,6 +50,7 @@ router.put(
   "/:id",
   authenticateToken,
   authorizeRoles(["ADMIN", "QA"]),
+  authorizeWorkflowTransition("BATCH_SHEET_RECORD", "edit"),
   enforceLock("batch_sheet_records"),
   validate(updateRecordSchema),
   BatchSheetRecordController.update
@@ -57,7 +59,7 @@ router.put(
 router.get(
   "/:id/check-lock",
   authenticateToken,
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA"]),
+  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]),
   BatchSheetRecordController.checkLock
 );
 

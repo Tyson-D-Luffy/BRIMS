@@ -151,12 +151,12 @@ export default function Login({ onLogin }: LoginProps) {
           </div>
 
           {/* Featured BRIMS Logo Image Card */}
-          <div className="relative z-10 my-auto py-4 flex flex-col items-center text-center">
-            <div className="w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl shadow-cyan-950/50 border border-cyan-500/20 bg-slate-850 transform hover:scale-[1.01] transition-all duration-300">
+          <div className="relative z-10 my-auto py-2 flex flex-col items-center text-center">
+            <div className="w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl shadow-cyan-950/60 border border-cyan-500/30 bg-slate-950 transform hover:scale-[1.01] transition-all duration-300">
               <img 
                 src="/brims_logo.jpg" 
                 alt="BRIMS - Batch Record Issuance Management System" 
-                className="w-full h-auto object-cover block"
+                className="w-full h-auto aspect-square object-contain bg-slate-950 block"
                 referrerPolicy="no-referrer"
               />
             </div>

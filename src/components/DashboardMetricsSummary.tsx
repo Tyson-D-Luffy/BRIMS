@@ -251,8 +251,8 @@ export function DashboardMetricsSummary({
 
             <CardContent className="p-6 pt-2 space-y-4">
               {/* Mini Recharts Sparkline for Pending Volume */}
-              <div className="h-16 w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-16 w-full pt-2 min-w-0 min-h-[64px] relative">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <BarChart data={last7DaysTrendData}>
                     <Bar dataKey="pending" fill="#f43f5e" radius={[4, 4, 0, 0]} />
                     <Tooltip 
@@ -315,8 +315,8 @@ export function DashboardMetricsSummary({
 
             <CardContent className="p-6 pt-2 space-y-4">
               {/* Mini Recharts Bar Breakdown for Severity */}
-              <div className="h-16 w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-16 w-full pt-2 min-w-0 min-h-[64px] relative">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <BarChart data={severityData} layout="vertical">
                     <XAxis type="number" hide />
                     <YAxis type="category" dataKey="name" hide />
@@ -385,8 +385,8 @@ export function DashboardMetricsSummary({
 
             <CardContent className="p-6 pt-2 space-y-4">
               {/* Mini Recharts Area Sparkline for Daily Issuance Pace */}
-              <div className="h-16 w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-16 w-full pt-2 min-w-0 min-h-[64px] relative">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <AreaChart data={last7DaysTrendData}>
                     <defs>
                       <linearGradient id="issuedGradient" x1="0" y1="0" x2="0" y2="1">
@@ -453,9 +453,9 @@ export function DashboardMetricsSummary({
           </div>
         </div>
 
-        <div ref={containerRef} className="w-full h-[240px]">
+        <div ref={containerRef} className="w-full h-[240px] min-w-0 min-h-[240px] relative">
           {containerWidth && containerWidth > 0 ? (
-            <ResponsiveContainer width="100%" height={240}>
+            <ResponsiveContainer width="100%" height={240} minWidth={0} minHeight={240} debounce={50}>
               {activeTab === 'velocity' ? (
                 <ComposedChart data={last7DaysTrendData} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
                   <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />

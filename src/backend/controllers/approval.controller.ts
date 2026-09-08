@@ -2,16 +2,33 @@ import { Response } from "express";
 import { ApprovalService } from "../services/approval.service.ts";
 import { BatchSheetRecordService } from "../services/batchSheetRecord.service.ts";
 import { AuthRequest } from "../middleware/auth.middleware.ts";
+import { hasBranchAccess } from "../middleware/branch.middleware.ts";
 
 export class ApprovalController {
   static async submit(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const result = await ApprovalService.submitForReview(id, req.user, req.signatureInfo);
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async review(req: AuthRequest, res: Response) {
+    try {
+      const { id } = req.params;
+      const record = await BatchSheetRecordService.getRecordById(id);
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const { comments } = req.body;
+
+      const result = await ApprovalService.reviewRecord(id, comments, req.user, req.signatureInfo);
       res.json({ success: true, data: result });
     } catch (error: any) {
       res.status(400).json({ success: false, message: error.message });
@@ -22,7 +39,7 @@ export class ApprovalController {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const { comments } = req.body;
@@ -38,7 +55,7 @@ export class ApprovalController {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const { comments } = req.body;
@@ -54,7 +71,7 @@ export class ApprovalController {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const { returnReason, returnToStep, comments } = req.body;
@@ -70,7 +87,7 @@ export class ApprovalController {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const { changeReason } = req.body;
@@ -95,7 +112,7 @@ export class ApprovalController {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const history = await ApprovalService.getApprovalHistory(id);

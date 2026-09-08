@@ -30,10 +30,12 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { HighlightText } from '../components/HighlightText';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '../lib/utils';
+import { getWorkflowActionStatus } from '../lib/workflowEngine';
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -179,8 +181,15 @@ export default function ProductMasters() {
 
   // Filter products locally on active tab and search query to provide ultra-fast dynamic interaction
   const filteredProducts = products.filter(p => {
-    const searchLower = searchQuery.toLowerCase();
-    const titleMatch = (p.title || "").toLowerCase().includes(searchLower);
+    const searchLower = searchQuery.toLowerCase().trim();
+    const titleMatch = !searchLower || 
+      (p.title || "").toLowerCase().includes(searchLower) ||
+      (p.description || "").toLowerCase().includes(searchLower) ||
+      (p.batchNumberSeries || "").toLowerCase().includes(searchLower) ||
+      (p.type || "").toLowerCase().includes(searchLower) ||
+      (p.stage || "").toLowerCase().includes(searchLower) ||
+      (p.createdByEmail || "").toLowerCase().includes(searchLower) ||
+      (p.workflowStatus || "").toLowerCase().includes(searchLower);
     
     let matchesTab = true;
     const wStatus = p.workflowStatus || "Active"; // Fallback to Active for existing master records
@@ -347,8 +356,8 @@ export default function ProductMasters() {
     
     if (!isSystemAdmin) {
       if (action === 'submit') {
-        if (!userPermissions.includes('create:product') && !userPermissions.includes('edit:product')) {
-          toast.error("Access Denied: You do not have 'Create' or 'Edit Product Master' permission.");
+        if (!userPermissions.includes('product:submit')) {
+          toast.error("Access Denied: You do not have 'Submit Product Master (GAMP Review)' permission.");
           return;
         }
       } else if (action === 'start-review') {
@@ -488,13 +497,25 @@ export default function ProductMasters() {
 
   const baseRole = getUserBaseRole(user);
   const isAdmin = baseRole === 'ADMIN' || user?.permissions?.includes('user:manage');
-  const isProduction = user?.permissions?.includes('create:product') || user?.permissions?.includes('edit:product') || isAdmin || baseRole === 'PRODUCTION_MANAGER';
-  const isQA = user?.permissions?.includes('product:review') || user?.permissions?.includes('product:approve') || isAdmin || baseRole === 'QA';
+  const isProduction = user?.permissions?.includes('create:product') || user?.permissions?.includes('edit:product') || baseRole === 'PRODUCTION_MANAGER';
+  const isQA = user?.permissions?.includes('product:review') || user?.permissions?.includes('product:approve') || baseRole === 'QA';
+  // Submit Product Master is assigned strictly to QA Chemist (users holding product:submit)
+  const canSubmitProduct = !!user?.permissions?.includes('product:submit');
+
+  const getProductActionStatus = (product: ProductMaster, action: string) => {
+    return getWorkflowActionStatus({
+      user,
+      entityType: 'PRODUCT_MASTER',
+      currentStatus: product.workflowStatus || 'Draft',
+      action,
+      record: product
+    });
+  };
 
   // Check duty segregation rules
   const getSegregationError = (product: ProductMaster) => {
-    if (product.createdBy === user?.uid && !isAdmin) {
-      return "(Duty Segregation: You are the Creator of this master document. Reviewer/Approver actions must be performed by a secondary user)";
+    if (product.createdBy === user?.uid) {
+      return "(Duty Segregation: You are the Creator of this master document. Reviewer/Approver actions must be performed by a secondary user per GAMP 5)";
     }
     return null;
   };
@@ -669,7 +690,7 @@ export default function ProductMasters() {
                           className="hover:bg-slate-50/80 transition-colors group"
                         >
                           <td className="py-4 px-4 font-bold text-slate-900 group-hover:text-indigo-600 transition-colors cursor-pointer" onClick={() => setViewingProduct(product)}>
-                            {product.title}
+                            <HighlightText text={product.title} search={searchQuery} />
                           </td>
                           <td className="py-4 px-4">
                             <Badge className={`${getWorkflowBadgeColor(currentWStatus)} border font-semibold px-2 py-0.5 rounded-lg text-xs inline-flex items-center gap-1`}>
@@ -683,7 +704,7 @@ export default function ProductMasters() {
                             {new Date(product.activeSince || product.effectiveDate || product.approvedDate || product.updatedAt || product.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                           </td>
                           <td className="py-4 px-4 text-xs text-slate-600">
-                            {creatorName.split('@')[0]}
+                            <HighlightText text={creatorName.split('@')[0]} search={searchQuery} />
                           </td>
                           <td className="py-4 px-4 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
@@ -781,7 +802,7 @@ export default function ProductMasters() {
                       
                       <div className="flex-1">
                         <h3 className="text-xl font-bold text-slate-900 mb-1 leading-snug group-hover:text-indigo-600 transition-colors">
-                          {product.title}
+                          <HighlightText text={product.title} search={searchQuery} />
                         </h3>
                         <p className="text-xs font-mono text-slate-400 mb-3 flex items-center gap-1">
                           <span>Ver: {product.version || 1}.{product.revisionNo || 0}</span>
@@ -804,25 +825,30 @@ export default function ProductMasters() {
                         
                         {product.description && (
                           <p className="text-xs text-slate-500 line-clamp-2 mb-4 leading-relaxed">
-                            {product.description}
+                            <HighlightText text={product.description} search={searchQuery} />
                           </p>
                         )}
                       </div>
 
                       <div className="space-y-2 mt-auto">
                         {/* Short action trigger right on the card to submit quickly */}
-                        {(isProduction || isAdmin) && (currentWStatus === 'Draft' || currentWStatus === 'Returned for Correction') && (
-                          <Button 
-                            onClick={() => {
-                              setViewingProduct(product);
-                              handleWorkflowAction('submit', undefined, product);
-                            }}
-                            disabled={workflowActionLoading}
-                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold h-9 flex items-center justify-center gap-1.5"
-                          >
-                            <Send className="w-3.5 h-3.5" /> Submit for GAMP Review
-                          </Button>
-                        )}
+                        {(() => {
+                          const submitStatus = getProductActionStatus(product, 'submit');
+                          if (!submitStatus.visible) return null;
+                          return (
+                            <Button 
+                              onClick={() => {
+                                setViewingProduct(product);
+                                handleWorkflowAction('submit', undefined, product);
+                              }}
+                              disabled={workflowActionLoading || !submitStatus.enabled}
+                              title={submitStatus.tooltip}
+                              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold h-9 flex items-center justify-center gap-1.5"
+                            >
+                              <Send className="w-3.5 h-3.5" /> Submit for GAMP Review
+                            </Button>
+                          );
+                        })()}
 
                         {/* View details specifications drawer trigger */}
                         <Button 
@@ -990,25 +1016,53 @@ export default function ProductMasters() {
                     </div>
                   ) : (
                     <>
-                      {/* Active workflows transition options */}
-                      {(viewingProduct.workflowStatus === 'Pending for Review' || viewingProduct.workflowStatus === 'Under Review') && (isAdmin || user?.permissions?.includes('product:review') || user?.permissions?.includes('product:approve') || user?.permissions?.includes('product:return')) && (
-                        <div className="space-y-4 text-left">
-                          {viewingProduct.workflowStatus === 'Pending for Review' && (
-                            <div className="flex items-center justify-between bg-indigo-50/80 p-3.5 rounded-2xl border border-indigo-100 mb-2">
-                              <div>
-                                <h4 className="text-xs font-bold text-indigo-950">Pending QA / GAMP Review Acquisition</h4>
-                                <p className="text-[11px] text-indigo-700">Acquire review lock or return directly to creator for adjustments.</p>
-                              </div>
-                              <Button
-                                onClick={() => handleWorkflowAction('start-review')}
-                                disabled={workflowActionLoading}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs px-4 h-9 font-semibold shrink-0"
-                              >
-                                {workflowActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
-                                Acquire / Begin Review
-                              </Button>
+                      {/* Submission trigger for Draft or Returned for Correction records */}
+                      {(() => {
+                        const submitStatus = getProductActionStatus(viewingProduct, 'submit');
+                        if (!submitStatus.visible) return null;
+                        return (
+                          <div className="flex items-center justify-between bg-indigo-50/80 p-3.5 rounded-2xl border border-indigo-100 mb-4 text-left">
+                            <div>
+                              <h4 className="text-xs font-bold text-indigo-950">Specification Ready for GAMP Review</h4>
+                              <p className="text-[11px] text-indigo-700">Submit drafted or corrected product specifications for formal GAMP review (QA Chemist authority).</p>
                             </div>
-                          )}
+                            <Button
+                              onClick={() => handleWorkflowAction('submit')}
+                              disabled={workflowActionLoading || !submitStatus.enabled}
+                              title={submitStatus.tooltip}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs px-4 h-9 font-semibold shrink-0 flex items-center gap-1.5"
+                            >
+                              {workflowActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Send className="w-3.5 h-3.5" />}
+                              Submit for GAMP Review
+                            </Button>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Active workflows transition options */}
+                      {(viewingProduct.workflowStatus === 'Pending for Review' || viewingProduct.workflowStatus === 'Under Review') && (
+                        <div className="space-y-4 text-left">
+                          {(() => {
+                            const startReviewStatus = getProductActionStatus(viewingProduct, 'start-review');
+                            if (!startReviewStatus.visible) return null;
+                            return (
+                              <div className="flex items-center justify-between bg-indigo-50/80 p-3.5 rounded-2xl border border-indigo-100 mb-2">
+                                <div>
+                                  <h4 className="text-xs font-bold text-indigo-950">Pending QA / GAMP Review Acquisition</h4>
+                                  <p className="text-[11px] text-indigo-700">Acquire review lock or return directly to creator for adjustments.</p>
+                                </div>
+                                <Button
+                                  onClick={() => handleWorkflowAction('start-review')}
+                                  disabled={workflowActionLoading || !startReviewStatus.enabled}
+                                  title={startReviewStatus.tooltip}
+                                  className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs px-4 h-9 font-semibold shrink-0"
+                                >
+                                  {workflowActionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+                                  Acquire / Begin Review
+                                </Button>
+                              </div>
+                            );
+                          })()}
 
                           <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-3">
                             <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center justify-between">
@@ -1024,54 +1078,71 @@ export default function ProductMasters() {
                             />
 
                             <div className="flex gap-2 flex-wrap pt-1">
-                              {/* Ultimate Approvals - available when Under Review */}
-                              {viewingProduct.workflowStatus === 'Under Review' && (isAdmin || user?.permissions?.includes('product:approve')) && (
-                                <Button
-                                  onClick={() => {
-                                    if (workflowComments.length < 5) {
-                                      toast.error('Please type compliance comments mapping your approval (minimum 5 chars)');
-                                      return;
-                                    }
-                                    handleWorkflowAction('approve');
-                                  }}
-                                  disabled={workflowActionLoading}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold px-4 h-9"
-                                >
-                                  Sign-off Approve
-                                </Button>
-                              )}
+                              {/* Ultimate Approvals */}
+                              {(() => {
+                                const approveStatus = getProductActionStatus(viewingProduct, 'approve');
+                                if (!approveStatus.visible) return null;
+                                return (
+                                  <Button
+                                    onClick={() => {
+                                      if (workflowComments.length < 5) {
+                                        toast.error('Please type compliance comments mapping your approval (minimum 5 chars)');
+                                        return;
+                                      }
+                                      handleWorkflowAction('approve');
+                                    }}
+                                    disabled={workflowActionLoading || !approveStatus.enabled}
+                                    title={approveStatus.tooltip}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold px-4 h-9"
+                                  >
+                                    Sign-off Approve
+                                  </Button>
+                                );
+                              })()}
 
-                              {viewingProduct.workflowStatus === 'Under Review' && (isAdmin || user?.permissions?.includes('product:reject') || user?.permissions?.includes('product:review')) && (
-                                <Button
-                                  onClick={() => {
-                                    if (workflowComments.length < 5) {
-                                      toast.error('Please input a rejection comment explanation');
-                                      return;
-                                    }
-                                    handleWorkflowAction('reject');
-                                  }}
-                                  disabled={workflowActionLoading}
-                                  className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold px-4 h-9"
-                                >
-                                  Reject
-                                </Button>
-                              )}
+                              {/* Reject */}
+                              {(() => {
+                                const rejectStatus = getProductActionStatus(viewingProduct, 'reject');
+                                if (!rejectStatus.visible) return null;
+                                return (
+                                  <Button
+                                    onClick={() => {
+                                      if (workflowComments.length < 5) {
+                                        toast.error('Please input a rejection comment explanation');
+                                        return;
+                                      }
+                                      handleWorkflowAction('reject');
+                                    }}
+                                    disabled={workflowActionLoading || !rejectStatus.enabled}
+                                    title={rejectStatus.tooltip}
+                                    className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold px-4 h-9"
+                                  >
+                                    Reject
+                                  </Button>
+                                );
+                              })()}
 
-                              {(isAdmin || user?.permissions?.includes('product:return') || user?.permissions?.includes('product:review') || user?.permissions?.includes('product:approve')) && (
-                                <Button
-                                  onClick={() => {
-                                    if (workflowComments.length < 5) {
-                                      toast.error('Please insert return instructions for the creator in comments');
-                                      return;
-                                    }
-                                    handleWorkflowAction('return-correction');
-                                  }}
-                                  disabled={workflowActionLoading}
-                                  className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold px-4 h-9 flex items-center gap-1.5"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5" /> Return to Creator (Draft)
-                                </Button>
-                              )}
+                              {/* Return for Correction */}
+                              {(() => {
+                                const returnStatus = getProductActionStatus(viewingProduct, 'return-correction');
+                                if (!returnStatus.visible) return null;
+                                return (
+                                  <Button
+                                    onClick={() => {
+                                      if (workflowComments.length < 5) {
+                                        toast.error('Please insert return instructions for the creator in comments');
+                                        return;
+                                      }
+                                      handleWorkflowAction('return-correction');
+                                    }}
+                                    disabled={workflowActionLoading || !returnStatus.enabled}
+                                    title={returnStatus.tooltip}
+                                    className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold px-4 h-9 flex items-center gap-1.5"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" /> Return to Creator (Draft)
+                                  </Button>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>

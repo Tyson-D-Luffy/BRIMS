@@ -37,9 +37,11 @@ export const validate = (schema: ZodSchema) => {
           console.warn(`[VALIDATION FAILURE] Anonymous request to ${req.path}:`, details);
         }
 
+        const errorMsg = details.map((d) => (d.field ? `${d.field}: ` : "") + d.message).join("; ") || "Validation Error";
         return res.status(400).json({
           success: false,
           error: "Validation Error",
+          message: errorMsg,
           details
         });
       }

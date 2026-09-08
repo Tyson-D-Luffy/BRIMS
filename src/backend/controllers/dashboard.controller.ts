@@ -62,4 +62,18 @@ export class DashboardController {
       res.status(500).json({ success: false, message: error.message });
     }
   }
+
+  static async getMonthlyBatchRequests(req: AuthRequest, res: Response) {
+    try {
+      const { month, year } = req.query;
+      const data = await DashboardService.getMonthlyBatchRequests(
+        month as string,
+        year as string,
+        (req as any).selectedBranch
+      );
+      res.json({ success: true, data });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
 }

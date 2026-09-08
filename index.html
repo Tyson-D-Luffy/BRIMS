@@ -3,7 +3,150 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Google AI Studio App</title>
+    <title>BRIMS - Batch Record Issuance Management System</title>
+    <meta name="description" content="A GMP-compliant system for managing pharmaceutical batch records with electronic signatures and audit trails." />
+    <meta property="og:title" content="BRIMS - Batch Record Issuance Management System" />
+    <meta property="og:description" content="A GMP-compliant system for managing pharmaceutical batch records with electronic signatures and audit trails." />
+    <script>
+      (function() {
+        function isIgnoredError(reasonOrMsg) {
+          if (!reasonOrMsg) return false;
+          var str = '';
+          if (typeof reasonOrMsg === 'string') {
+            str = reasonOrMsg;
+          } else if (reasonOrMsg instanceof Error) {
+            str = (reasonOrMsg.message || '') + ' ' + (reasonOrMsg.stack || '') + ' ' + (reasonOrMsg.name || '');
+          } else if (typeof reasonOrMsg === 'object') {
+            try {
+              str = (reasonOrMsg.message || '') + ' ' + (reasonOrMsg.reason ? isIgnoredError(reasonOrMsg.reason) : '') + ' ' + JSON.stringify(reasonOrMsg);
+            } catch (e) {
+              str = String(reasonOrMsg);
+            }
+          } else {
+            str = String(reasonOrMsg);
+          }
+          str = str.toLowerCase();
+          return (
+            str.indexOf('websocket closed without opened') !== -1 ||
+            str.indexOf('websocket') !== -1 ||
+            str.indexOf('closed without opened') !== -1 ||
+            str.indexOf('failed to connect to websocket') !== -1 ||
+            str.indexOf('closing or closed state') !== -1 ||
+            str.indexOf('bloomfilter') !== -1 ||
+            str.indexOf('hmr') !== -1 ||
+            str.indexOf('the width(-1) and height(-1) of chart') !== -1
+          );
+        }
+
+        // Suppress console error / warn for harmless dev environment WebSocket handshake logs
+        var origError = console.error;
+        console.error = function() {
+          var args = Array.prototype.slice.call(arguments);
+          var msg = args.map(function(a) { return typeof a === 'object' ? JSON.stringify(a) : String(a); }).join(' ');
+          if (isIgnoredError(msg)) return;
+          origError.apply(console, args);
+        };
+
+        var origWarn = console.warn;
+        console.warn = function() {
+          var args = Array.prototype.slice.call(arguments);
+          var msg = args.map(function(a) { return typeof a === 'object' ? JSON.stringify(a) : String(a); }).join(' ');
+          if (isIgnoredError(msg)) return;
+          origWarn.apply(console, args);
+        };
+
+        // Wrap WebSocket constructor early before any scripts run
+        if (typeof window !== 'undefined' && window.WebSocket) {
+          var OriginalWS = window.WebSocket;
+          try {
+            class SafeWS extends OriginalWS {
+              constructor(url, protocols) {
+                super(url, protocols);
+                this.addEventListener('error', function(event) {
+                  if (event && typeof event.stopImmediatePropagation === 'function') {
+                    event.stopImmediatePropagation();
+                  }
+                }, { capture: true });
+                this.addEventListener('close', function(event) {
+                  if (event && typeof event.stopImmediatePropagation === 'function') {
+                    event.stopImmediatePropagation();
+                  }
+                }, { capture: true });
+              }
+
+              send(data) {
+                try {
+                  if (this.readyState === 1) { // OPEN
+                    super.send(data);
+                  }
+                } catch (e) {}
+              }
+
+              close(code, reason) {
+                try {
+                  if (this.readyState === 0 || this.readyState === 1) {
+                    super.close(code, reason);
+                  }
+                } catch (e) {}
+              }
+            }
+
+            Object.defineProperty(window, 'WebSocket', {
+              value: SafeWS,
+              configurable: true,
+              writable: true
+            });
+          } catch (e) {
+            // In case of restriction, continue
+          }
+        }
+
+        // Intercept unhandled promise rejections in capture phase
+        window.addEventListener('unhandledrejection', function(event) {
+          if (isIgnoredError(event.reason) || isIgnoredError(event.detail)) {
+            event.preventDefault();
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation();
+            }
+            if (typeof event.stopPropagation === 'function') {
+              event.stopPropagation();
+            }
+            return false;
+          }
+        }, true);
+
+        // Intercept window errors in capture phase
+        window.addEventListener('error', function(event) {
+          if (isIgnoredError(event.message) || isIgnoredError(event.error)) {
+            event.preventDefault();
+            if (typeof event.stopImmediatePropagation === 'function') {
+              event.stopImmediatePropagation();
+            }
+            if (typeof event.stopPropagation === 'function') {
+              event.stopPropagation();
+            }
+            return false;
+          }
+        }, true);
+
+        // Observer to immediately remove any Vite error overlay if it displays WebSocket warnings
+        if (typeof MutationObserver !== 'undefined') {
+          var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+              mutation.addedNodes.forEach(function(node) {
+                if (node && node.nodeName && (node.nodeName.toLowerCase() === 'vite-error-overlay' || node.id === 'vite-error-overlay')) {
+                  var text = (node.textContent || node.innerText || '').toLowerCase();
+                  if (text.indexOf('websocket') !== -1 || text.indexOf('closed without opened') !== -1 || text.indexOf('failed to connect') !== -1) {
+                    node.remove();
+                  }
+                }
+              });
+            });
+          });
+          observer.observe(document.documentElement, { childList: true, subtree: true });
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

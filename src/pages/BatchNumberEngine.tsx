@@ -47,6 +47,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { SignatureDialog } from '../components/SignatureDialog';
+import { HighlightText } from '../components/HighlightText';
 
 import { 
   BatchNumberFormat, 
@@ -256,7 +257,8 @@ export default function BatchNumberEngine() {
   // Master addition logic
   const handleAddMasterItem = async () => {
     if (!checkPermission('lookup:create', "Access Denied: You do not have 'Create Master Lookup' permission.")) return;
-    if (!newMasterCode.trim()) {
+    const rawTrimmedCode = newMasterCode.trim();
+    if (!rawTrimmedCode) {
       toast.error('Value/Code cannot be empty');
       return;
     }
@@ -265,20 +267,22 @@ export default function BatchNumberEngine() {
       return;
     }
 
-    const codeUpper = newMasterCode.trim().toUpperCase();
+    // Allow lower case / mixed case for recovery_component, generic, and process lookups
+    const isCaseFlexible = ['recovery_component', 'generic', 'process'].includes(newMasterType);
+    const formattedCode = isCaseFlexible ? rawTrimmedCode : rawTrimmedCode.toUpperCase();
 
-    // Client-side duplicate check
+    // Client-side duplicate check (case-insensitive comparison)
     const isDuplicate = masters.some((m: any) => {
       if (m.type !== newMasterType) return false;
       if (newMasterType === 'stage') {
-        return m.code.toUpperCase() === codeUpper && m.productId === newMasterProductId;
+        return (m.code || '').toUpperCase() === formattedCode.toUpperCase() && m.productId === newMasterProductId;
       } else {
-        return m.code.toUpperCase() === codeUpper;
+        return (m.code || '').toUpperCase() === formattedCode.toUpperCase();
       }
     });
 
     if (isDuplicate) {
-      toast.error(`Duplicate value error: A master record for ${newMasterType.replace('_', ' ')} with value "${codeUpper}" already exists.`);
+      toast.error(`Duplicate value error: A master record for ${newMasterType.replace('_', ' ')} with value "${formattedCode}" already exists.`);
       return;
     }
 
@@ -286,9 +290,9 @@ export default function BatchNumberEngine() {
       const userDisplayName = user?.displayName || user?.email || 'User';
       const item: any = {
         type: newMasterType,
-        code: codeUpper,
+        code: formattedCode,
         status: 'DRAFT',
-        ...(newMasterType === 'product' || newMasterType === 'process' ? { name: newMasterName.trim() } : {}),
+        ...(newMasterName.trim() ? { name: newMasterName.trim() } : {}),
         ...(newMasterType === 'stage' ? { productId: newMasterProductId } : {}),
         history: [
           {
@@ -629,13 +633,29 @@ export default function BatchNumberEngine() {
                         : newMasterType === 'stage'
                           ? "e.g. LH10, MK11, DS"
                           : newMasterType === 'recovery_component'
-                            ? "e.g. RM09, ACN, Toluene"
+                            ? "e.g. RM09, ACN, toluene, acetone"
                             : newMasterType === 'generic'
-                              ? "e.g. A, Aq., II, REC."
-                              : "e.g. Manufacturing, Micronization, Milling"
+                              ? "e.g. A, Aq., aq., II, REC., rec."
+                              : "e.g. Manufacturing, micronization, milling"
                     } 
                     value={newMasterCode} 
-                    onChange={(e) => setNewMasterCode(e.target.value)}
+                    onChange={(e) => {
+                      const isCaseFlexible = ['recovery_component', 'generic', 'process'].includes(newMasterType);
+                      setNewMasterCode(isCaseFlexible ? e.target.value : e.target.value.toUpperCase());
+                    }}
+                    className={`h-12 rounded-xl focus-visible:ring-indigo-500 ${
+                      ['recovery_component', 'generic', 'process'].includes(newMasterType) ? '' : 'uppercase'
+                    }`}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Description / Name (Optional)</Label>
+                  <Input 
+                    type="text" 
+                    placeholder="e.g. Optional description or full title" 
+                    value={newMasterName} 
+                    onChange={(e) => setNewMasterName(e.target.value)}
                     className="h-12 rounded-xl focus-visible:ring-indigo-500"
                   />
                 </div>
@@ -3642,21 +3662,29 @@ function ActiveBatchesScreen({
                 <tbody className="divide-y divide-slate-100 text-sm">
                   {filteredRecords.map((r, i) => (
                     <tr key={i} className={`transition-colors duration-150 ${r.status === 'PENDING_APPROVAL' ? 'bg-amber-50/10 hover:bg-amber-50/25' : 'hover:bg-slate-50/50'}`}>
-                      <td className="p-4 px-6 font-mono text-xs font-black text-[#FF6321]">{r.batchNumber}</td>
-                      <td className="p-4 text-slate-700 font-bold">{r.product}</td>
+                      <td className="p-4 px-6 font-mono text-xs font-black text-[#FF6321]">
+                        <HighlightText text={r.batchNumber} search={searchTerm} />
+                      </td>
+                      <td className="p-4 text-slate-700 font-bold">
+                        <HighlightText text={r.product} search={searchTerm} />
+                      </td>
                       <td className="p-4 text-slate-600 font-medium">
                         <span className="bg-slate-100 px-2 py-0.5 rounded text-[10px] font-semibold text-slate-700">
-                          {r.category}
+                          <HighlightText text={r.category} search={searchTerm} />
                         </span>
                       </td>
-                      <td className="p-4 text-slate-500 text-xs">{r.scenario}</td>
+                      <td className="p-4 text-slate-500 text-xs">
+                        <HighlightText text={r.scenario} search={searchTerm} />
+                      </td>
                       <td className="p-4 text-slate-400 text-xs">
                         {r.generatedOn ? new Date(r.generatedOn).toLocaleDateString() : 'N/A'}
                         <span className="text-[10px] block text-slate-300">
                           {r.generatedOn ? new Date(r.generatedOn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                         </span>
                       </td>
-                      <td className="p-4 px-6 text-slate-500 text-xs font-semibold">{r.generatedBy}</td>
+                      <td className="p-4 px-6 text-slate-500 text-xs font-semibold">
+                        <HighlightText text={r.generatedBy} search={searchTerm} />
+                      </td>
                       <td className="p-4">
                         <span className={`inline-flex px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
                           r.status === 'APPROVED' 
@@ -3767,7 +3795,8 @@ function MastersScreen({
 
   const handleSaveEdit = () => {
     if (!editingItem) return;
-    if (!editCode.trim()) {
+    const rawTrimmedCode = editCode.trim();
+    if (!rawTrimmedCode) {
       toast.error('Value/Code ID cannot be empty');
       return;
     }
@@ -3776,26 +3805,27 @@ function MastersScreen({
       return;
     }
 
-    const newCodeUpper = editCode.trim().toUpperCase();
+    const isCaseFlexible = ['recovery_component', 'generic', 'process'].includes(editingItem.type);
+    const formattedCode = isCaseFlexible ? rawTrimmedCode : rawTrimmedCode.toUpperCase();
 
-    // Duplicate check excluding current item being edited
+    // Duplicate check excluding current item being edited (case-insensitive comparison)
     const isDuplicate = masters.some((m: any) => {
       if (m.id === editingItem.id || m.type !== editingItem.type) return false;
       if (editingItem.type === 'stage') {
-        return m.code.toUpperCase() === newCodeUpper && m.productId === editProductId;
+        return (m.code || '').toUpperCase() === formattedCode.toUpperCase() && m.productId === editProductId;
       } else {
-        return m.code.toUpperCase() === newCodeUpper;
+        return (m.code || '').toUpperCase() === formattedCode.toUpperCase();
       }
     });
 
     if (isDuplicate) {
-      toast.error(`Duplicate value error: A master record for ${editingItem.type.replace('_', ' ')} with value "${newCodeUpper}" already exists.`);
+      toast.error(`Duplicate value error: A master record for ${editingItem.type.replace('_', ' ')} with value "${formattedCode}" already exists.`);
       return;
     }
 
     const typeLabel = editingItem.type.replace('_', ' ');
     const title = `E-Signature Required: Edit Master Lookup (${typeLabel})`;
-    const description = `Signing to authorize modification of master lookup value from "${editingItem.code}" to "${newCodeUpper}".`;
+    const description = `Signing to authorize modification of master lookup value from "${editingItem.code}" to "${formattedCode}".`;
     const meaning = `I certify under 21 CFR Part 11 and GMP guidelines that I have authorized and updated this master lookup value.`;
 
     setSigConfig({
@@ -3810,14 +3840,14 @@ function MastersScreen({
             action: 'EDITED',
             user: userDisplayName,
             timestamp: new Date().toISOString(),
-            meaning: `Modified ${typeLabel} value from "${editingItem.code}" to "${newCodeUpper}"`,
+            meaning: `Modified ${typeLabel} value from "${editingItem.code}" to "${formattedCode}"`,
             status: 'DRAFT',
             previousCode: editingItem.code,
-            newCode: newCodeUpper
+            newCode: formattedCode
           };
 
           const updateData: any = {
-            code: newCodeUpper,
+            code: formattedCode,
             status: 'DRAFT', // Reset status to DRAFT so same approval process (Submit -> Activate) is followed
             approvedBy: null,
             approvedDate: null,
@@ -3841,18 +3871,18 @@ function MastersScreen({
           if (logAudit) {
             await logAudit(
               'EDIT_MASTER_LOOKUP',
-              newCodeUpper,
+              formattedCode,
               'MASTER_LOOKUP',
               { code: editingItem.code, name: editingItem.name, status: editingItem.status, type: editingItem.type },
-              { code: newCodeUpper, name: editName.trim(), status: 'DRAFT', type: editingItem.type },
-              `Authorized edit of ${typeLabel} master lookup from "${editingItem.code}" to "${newCodeUpper}" under GMP compliance`
+              { code: formattedCode, name: editName.trim(), status: 'DRAFT', type: editingItem.type },
+              `Authorized edit of ${typeLabel} master lookup from "${editingItem.code}" to "${formattedCode}" under GMP compliance`
             );
           }
 
           setShowSignature(false);
           setShowEditModal(false);
           setEditingItem(null);
-          toast.success(`Updated "${newCodeUpper}" successfully and set to DRAFT. Follow Submit -> Activate for approval.`);
+          toast.success(`Updated "${formattedCode}" successfully and set to DRAFT. Follow Submit -> Activate for approval.`);
         } catch (err: any) {
           toast.error('Signature verification failed');
         }
@@ -4055,13 +4085,19 @@ function MastersScreen({
                         </span>
                       </div>
                       
-                      <p className="text-sm font-black font-mono text-slate-900 leading-none truncate">{item.code}</p>
-                      {item.name && <p className="text-xs text-slate-400 mt-1 truncate">{item.name}</p>}
+                      <p className="text-sm font-black font-mono text-slate-900 leading-none truncate">
+                        <HighlightText text={item.code} search={searchQuery} />
+                      </p>
+                      {item.name && (
+                        <p className="text-xs text-slate-400 mt-1 truncate">
+                          <HighlightText text={item.name} search={searchQuery} />
+                        </p>
+                      )}
                       {item.type === 'stage' && item.productId && (
                         <div className="mt-1 flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded text-[10px] w-fit text-slate-600 border border-slate-100">
                           <span className="font-semibold text-slate-400">Product:</span>
                           <span className="font-medium truncate max-w-[150px]">
-                            {allProducts.find(p => p.id === item.productId)?.title || 'Unknown Product'}
+                            <HighlightText text={allProducts.find(p => p.id === item.productId)?.title || 'Unknown Product'} search={searchQuery} />
                           </span>
                         </div>
                       )}
@@ -4408,9 +4444,22 @@ function MastersScreen({
                   <Label className="text-xs font-bold text-slate-700">Value / Code ID *</Label>
                   <Input 
                     value={editCode}
-                    onChange={(e) => setEditCode(e.target.value.toUpperCase())}
-                    placeholder="e.g. STG-01, RM-807..."
-                    className="h-10 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-indigo-500 text-xs font-bold font-mono uppercase text-slate-900"
+                    onChange={(e) => {
+                      const isCaseFlexible = editingItem && ['recovery_component', 'generic', 'process'].includes(editingItem.type);
+                      setEditCode(isCaseFlexible ? e.target.value : e.target.value.toUpperCase());
+                    }}
+                    placeholder={
+                      editingItem?.type === 'recovery_component'
+                        ? "e.g. RM09, ACN, toluene, acetone..."
+                        : editingItem?.type === 'generic'
+                          ? "e.g. A, Aq., aq., II, REC., rec..."
+                          : editingItem?.type === 'process'
+                            ? "e.g. Manufacturing, micronization, milling..."
+                            : "e.g. STG-01, LH10..."
+                    }
+                    className={`h-10 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-indigo-500 text-xs font-bold font-mono text-slate-900 ${
+                      editingItem && ['recovery_component', 'generic', 'process'].includes(editingItem.type) ? '' : 'uppercase'
+                    }`}
                   />
                 </div>
 

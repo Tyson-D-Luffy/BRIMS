@@ -60,6 +60,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { FileDown } from 'lucide-react';
+import { HighlightText } from '../components/HighlightText';
 
 export default function BatchList() {
   const navigate = useNavigate();
@@ -168,7 +169,20 @@ export default function BatchList() {
   };
 
   const filteredBatches = batches.filter(b => {
-    const matchesSearch = b.batchNumber.toLowerCase().includes(search.toLowerCase());
+    const product = productMasters.find(p => p.id === b.productId);
+    const prodTitle = product?.title || '';
+    const prodType = product?.type || '';
+    const prodStage = product?.stage || '';
+    const searchLower = search.toLowerCase().trim();
+
+    const matchesSearch = !searchLower || 
+      b.batchNumber.toLowerCase().includes(searchLower) ||
+      prodTitle.toLowerCase().includes(searchLower) ||
+      prodType.toLowerCase().includes(searchLower) ||
+      prodStage.toLowerCase().includes(searchLower) ||
+      b.status.toLowerCase().replace(/_/g, ' ').includes(searchLower) ||
+      b.manufacturingDate.toLowerCase().includes(searchLower);
+
     const matchesStatus = statusFilter === 'ALL' || b.status === statusFilter;
     const matchesProduct = productFilter === 'ALL' || b.productId === productFilter;
     return matchesSearch && matchesStatus && matchesProduct;
@@ -285,25 +299,25 @@ export default function BatchList() {
                   onClick={() => navigate(`/batches/${batch.id}`)}
                 >
                   <TableCell className="pl-8 font-mono font-bold text-slate-900">
-                    {batch.batchNumber}
+                    <HighlightText text={batch.batchNumber} search={search} />
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col">
                       <span className="font-semibold text-slate-900">
-                        {productMasters.find(p => p.id === batch.productId)?.title || 'Unknown Product'}
+                        <HighlightText text={productMasters.find(p => p.id === batch.productId)?.title || 'Unknown Product'} search={search} />
                       </span>
                       <span className="text-xs text-slate-500">
-                        {productMasters.find(p => p.id === batch.productId)?.type}
+                        <HighlightText text={productMasters.find(p => p.id === batch.productId)?.type} search={search} />
                       </span>
                     </div>
                   </TableCell>
                   <TableCell>
-                    {getStatusBadge(batch.status)}
+                    <Badge variant="outline" className="bg-slate-50 border-slate-200 text-slate-700 rounded-full px-3 text-[11px] font-semibold">
+                      <HighlightText text={productMasters.find(p => p.id === batch.productId)?.stage || 'N/A'} search={search} />
+                    </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="bg-white rounded-full px-3 text-[10px] font-bold">
-                      {productMasters.find(p => p.id === batch.productId)?.stage || 'N/A'}
-                    </Badge>
+                    {getStatusBadge(batch.status)}
                   </TableCell>
                   <TableCell className="text-slate-600">
                     <div className="flex items-center gap-2">

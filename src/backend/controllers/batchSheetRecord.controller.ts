@@ -2,13 +2,14 @@ import { Response } from "express";
 import { BatchSheetRecordService } from "../services/batchSheetRecord.service.ts";
 import { BatchSheetMasterService } from "../services/batchSheetMaster.service.ts";
 import { AuthRequest } from "../middleware/auth.middleware.ts";
+import { hasBranchAccess } from "../middleware/branch.middleware.ts";
 
 export class BatchSheetRecordController {
   static async create(req: AuthRequest, res: Response) {
     try {
       const { id: masterId } = req.params;
       const master = await BatchSheetMasterService.getMasterById(masterId);
-      if (master && (master as any).branch && (master as any).branch !== (req as any).selectedBranch) {
+      if (master && !hasBranchAccess(req, (master as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const { changeReason } = req.body;
@@ -23,7 +24,7 @@ export class BatchSheetRecordController {
     try {
       const { id: masterId } = req.params;
       const master = await BatchSheetMasterService.getMasterById(masterId);
-      if (master && (master as any).branch && (master as any).branch !== (req as any).selectedBranch) {
+      if (master && !hasBranchAccess(req, (master as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const records = await BatchSheetRecordService.getRecordsByMasterId(masterId, (req as any).selectedBranch);
@@ -46,7 +47,7 @@ export class BatchSheetRecordController {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       res.json({ success: true, data: record });
@@ -59,7 +60,7 @@ export class BatchSheetRecordController {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const updatedRecord = await BatchSheetRecordService.updateRecord(id, req.body, req.user);
@@ -73,7 +74,7 @@ export class BatchSheetRecordController {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const { changeReason } = req.body;
@@ -88,7 +89,7 @@ export class BatchSheetRecordController {
     try {
       const { id } = req.params;
       const record = await BatchSheetRecordService.getRecordById(id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const { changeReason } = req.body;
@@ -103,7 +104,7 @@ export class BatchSheetRecordController {
     try {
       const { id: masterId } = req.params;
       const master = await BatchSheetMasterService.getMasterById(masterId);
-      if (master && (master as any).branch && (master as any).branch !== (req as any).selectedBranch) {
+      if (master && !hasBranchAccess(req, (master as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const record = await BatchSheetRecordService.getLatestApprovedRecord(masterId);
@@ -119,7 +120,7 @@ export class BatchSheetRecordController {
   static async checkLock(req: AuthRequest, res: Response) {
     try {
       const record = await BatchSheetRecordService.getRecordById(req.params.id);
-      if (record && (record as any).branch && (record as any).branch !== (req as any).selectedBranch) {
+      if (record && !hasBranchAccess(req, (record as any).branch)) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
       const result = await BatchSheetRecordService.isEditable(req.params.id);

@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { ApprovalController } from "../controllers/approval.controller.ts";
 import { authenticateToken, authorizeRoles, authorizePermissions } from "../middleware/auth.middleware.ts";
+import { authorizeWorkflowTransition } from "../middleware/workflowAuth.middleware.ts";
 import { enforceLock } from "../middleware/locking.middleware.ts";
 import { enforceSignature } from "../middleware/signature.middleware.ts";
 import { validate } from "../middleware/validate.middleware.ts";
-import { approveSchema, rejectSchema, submitSchema } from "../validations/approval.validation.ts";
+import { approveSchema, rejectSchema, submitSchema, reviewSchema } from "../validations/approval.validation.ts";
 
 const router = Router();
 
@@ -12,7 +13,7 @@ const router = Router();
 router.post(
   "/:id/submit",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:submit", "batch_sheet_master:create", "batch_sheet_master:edit"]),
+  authorizeWorkflowTransition("BATCH_SHEET_RECORD", "submit"),
   enforceLock("batch_sheet_records"),
   validate(submitSchema),
   enforceSignature("I am the author and I submit this record for review"),
@@ -20,9 +21,19 @@ router.post(
 );
 
 router.post(
+  "/:id/review",
+  authenticateToken,
+  authorizeWorkflowTransition("BATCH_SHEET_RECORD", "review"),
+  enforceLock("batch_sheet_records"),
+  validate(reviewSchema),
+  enforceSignature("I have reviewed this record and recommend it for approval"),
+  ApprovalController.review
+);
+
+router.post(
   "/:id/approve",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:approve"]),
+  authorizeWorkflowTransition("BATCH_SHEET_RECORD", "approve"),
   enforceLock("batch_sheet_records"),
   validate(approveSchema),
   enforceSignature("I have reviewed this record and I approve it for production"),
@@ -32,7 +43,7 @@ router.post(
 router.post(
   "/:id/reject",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:reject", "batch_sheet_master:review"]),
+  authorizeWorkflowTransition("BATCH_SHEET_RECORD", "reject"),
   enforceLock("batch_sheet_records"),
   validate(rejectSchema),
   enforceSignature("I have reviewed this record and I reject it for the reasons stated in the comments"),
@@ -42,7 +53,7 @@ router.post(
 router.post(
   "/:id/return",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:return", "batch_sheet_master:review", "batch_sheet_master:approve", "op:return_for_correction"]),
+  authorizeWorkflowTransition("BATCH_SHEET_RECORD", "return"),
   enforceLock("batch_sheet_records"),
   enforceSignature("Returned for Correction"),
   ApprovalController.returnRecord
@@ -51,7 +62,7 @@ router.post(
 router.post(
   "/:id/resubmit",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:submit", "batch_sheet_master:create", "batch_sheet_master:edit"]),
+  authorizeWorkflowTransition("BATCH_SHEET_RECORD", "resubmit"),
   enforceLock("batch_sheet_records"),
   enforceSignature("Resubmitted after correction"),
   ApprovalController.resubmit

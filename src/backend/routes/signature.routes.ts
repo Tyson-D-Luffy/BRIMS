@@ -8,7 +8,7 @@ const router = Router();
 router.get(
   "/records/:id/signatures",
   authenticateToken,
-  authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER"]),
+  authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"]),
   SignatureController.getByRecord
 );
 
@@ -16,7 +16,7 @@ router.get(
 router.get(
   "/entities/:entityId/signatures",
   authenticateToken,
-  authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER"]),
+  authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"]),
   SignatureController.getByEntity
 );
 

@@ -23,6 +23,7 @@ import documentRoutes from "./src/backend/routes/document.routes.ts";
 import uploadRoutes from "./src/backend/routes/upload.routes.ts";
 import departmentRoutes from "./src/backend/routes/department.routes.ts";
 import designationRoutes from "./src/backend/routes/designation.routes.ts";
+import designationProfileRoutes from "./src/backend/routes/designationPermissionProfile.routes.ts";
 import assistantRoutes from "./src/backend/routes/assistant.routes.ts";
 import complianceGuardianRoutes from "./src/backend/routes/complianceGuardian.routes.ts";
 import { captureMetadata } from "./src/backend/middleware/audit.middleware.ts";
@@ -136,6 +137,7 @@ async function startServer() {
   app.use("/api/documents", authenticateToken, validateBranchAccess, documentRoutes);
   app.use("/api/departments", authenticateToken, validateBranchAccess, departmentRoutes);
   app.use("/api/designations", authenticateToken, validateBranchAccess, designationRoutes);
+  app.use("/api/designation-profiles", authenticateToken, validateBranchAccess, designationProfileRoutes);
   app.use("/api/assistant", authenticateToken, validateBranchAccess, assistantRoutes);
   app.use("/api/compliance", authenticateToken, validateBranchAccess, complianceGuardianRoutes);
 
@@ -180,6 +182,7 @@ async function startServer() {
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
+        hmr: false,
       },
       appType: "spa",
     });
@@ -196,95 +199,97 @@ async function startServer() {
   const { errorHandler } = await import("./src/backend/middleware/error.middleware.ts");
   app.use(errorHandler);
 
-  httpServer.listen(PORT, "0.0.0.0", async () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`BRIMS Server running on http://localhost:${PORT}`);
     
-    // Background execution of user Employee ID migration for backwards compatibility
-    try {
-      const { adminDb, checkAdminHealth } = await import("./src/backend/config/firebase-admin.ts");
-      let isAdminActive = false;
+    // Background execution of user Employee ID migration deferred after server start
+    setImmediate(async () => {
       try {
-        isAdminActive = await checkAdminHealth();
-      } catch (e) {
-        isAdminActive = false;
-      }
-      
-      if (isAdminActive) {
-        console.log("[MIGRATION] Admin SDK is active. Running migration via Admin SDK...");
-        const usersSnapshot = await adminDb.collection("users").get();
-        const existingIds = new Set<string>();
-        
-        usersSnapshot.forEach(docSnap => {
-          const id = docSnap.data().employeeId;
-          if (id) {
-            existingIds.add(String(id).trim());
-          }
-        });
-
-        let count = 101;
-        for (const docSnap of usersSnapshot.docs) {
-          const data = docSnap.data();
-          if (!data.employeeId) {
-            let generatedId = `EMP${String(count).padStart(5, '0')}`;
-            while (existingIds.has(generatedId)) {
-              count++;
-              generatedId = `EMP${String(count).padStart(5, '0')}`;
-            }
-            existingIds.add(generatedId);
-            count++;
-            
-            await adminDb.collection("users").doc(docSnap.id).update({
-              employeeId: generatedId,
-              updatedAt: new Date().toISOString()
-            });
-            console.log(`[MIGRATION-ADMIN] Migrated user ${data.email || docSnap.id} to Employee ID: ${generatedId}`);
-          }
+        const { adminDb, checkAdminHealth } = await import("./src/backend/config/firebase-admin.ts");
+        let isAdminActive = false;
+        try {
+          isAdminActive = await checkAdminHealth();
+        } catch (e) {
+          isAdminActive = false;
         }
-        console.log("BRIMS User Employee ID automatic migration completed successfully via Admin SDK.");
-      } else {
-        console.log("[MIGRATION] Admin SDK inactive or lacking permissions. Falling back to Client SDK...");
-        const { db, ensureAuth } = await import("./src/backend/config/firebase-client.ts");
-        const { collection, getDocs, doc, updateDoc } = await import("firebase/firestore");
         
-        // Ensure anonymous auth is executed successfully first
-        await ensureAuth();
-        
-        const usersRef = collection(db, "users");
-        const querySnapshot = await getDocs(usersRef);
-        const existingIds = new Set<string>();
-        
-        // collect existing employee IDs
-        querySnapshot.forEach(docSnap => {
-          const id = docSnap.data().employeeId;
-          if (id) {
-            existingIds.add(String(id).trim());
-          }
-        });
-
-        let count = 101;
-        for (const docSnap of querySnapshot.docs) {
-          const data = docSnap.data();
-          if (!data.employeeId) {
-            let generatedId = `EMP${String(count).padStart(5, '0')}`;
-            while (existingIds.has(generatedId)) {
-              count++;
-              generatedId = `EMP${String(count).padStart(5, '0')}`;
+        if (isAdminActive) {
+          console.log("[MIGRATION] Admin SDK is active. Running migration via Admin SDK...");
+          const usersSnapshot = await adminDb.collection("users").get();
+          const existingIds = new Set<string>();
+          
+          usersSnapshot.forEach(docSnap => {
+            const id = docSnap.data().employeeId;
+            if (id) {
+              existingIds.add(String(id).trim());
             }
-            existingIds.add(generatedId);
-            count++;
-            
-            await updateDoc(doc(db, "users", docSnap.id), {
-              employeeId: generatedId,
-              updatedAt: new Date().toISOString()
-            });
-            console.log(`[MIGRATION-CLIENT] Migrated user ${data.email || docSnap.id} to Employee ID: ${generatedId}`);
+          });
+
+          let count = 101;
+          for (const docSnap of usersSnapshot.docs) {
+            const data = docSnap.data();
+            if (!data.employeeId) {
+              let generatedId = `EMP${String(count).padStart(5, '0')}`;
+              while (existingIds.has(generatedId)) {
+                count++;
+                generatedId = `EMP${String(count).padStart(5, '0')}`;
+              }
+              existingIds.add(generatedId);
+              count++;
+              
+              await adminDb.collection("users").doc(docSnap.id).update({
+                employeeId: generatedId,
+                updatedAt: new Date().toISOString()
+              });
+              console.log(`[MIGRATION-ADMIN] Migrated user ${data.email || docSnap.id} to Employee ID: ${generatedId}`);
+            }
           }
+          console.log("BRIMS User Employee ID automatic migration completed successfully via Admin SDK.");
+        } else {
+          console.log("[MIGRATION] Admin SDK inactive or lacking permissions. Falling back to Client SDK...");
+          const { db, ensureAuth } = await import("./src/backend/config/firebase-client.ts");
+          const { collection, getDocs, doc, updateDoc } = await import("firebase/firestore");
+          
+          // Ensure anonymous auth is executed successfully first
+          await ensureAuth();
+          
+          const usersRef = collection(db, "users");
+          const querySnapshot = await getDocs(usersRef);
+          const existingIds = new Set<string>();
+          
+          // collect existing employee IDs
+          querySnapshot.forEach(docSnap => {
+            const id = docSnap.data().employeeId;
+            if (id) {
+              existingIds.add(String(id).trim());
+            }
+          });
+
+          let count = 101;
+          for (const docSnap of querySnapshot.docs) {
+            const data = docSnap.data();
+            if (!data.employeeId) {
+              let generatedId = `EMP${String(count).padStart(5, '0')}`;
+              while (existingIds.has(generatedId)) {
+                count++;
+                generatedId = `EMP${String(count).padStart(5, '0')}`;
+              }
+              existingIds.add(generatedId);
+              count++;
+              
+              await updateDoc(doc(db, "users", docSnap.id), {
+                employeeId: generatedId,
+                updatedAt: new Date().toISOString()
+              });
+              console.log(`[MIGRATION-CLIENT] Migrated user ${data.email || docSnap.id} to Employee ID: ${generatedId}`);
+            }
+          }
+          console.log("BRIMS User Employee ID automatic migration completed successfully via Client SDK.");
         }
-        console.log("BRIMS User Employee ID automatic migration completed successfully via Client SDK.");
+      } catch (err: any) {
+        console.error("Failed to run User Employee ID migration:", err);
       }
-    } catch (err: any) {
-      console.error("Failed to run User Employee ID migration:", err);
-    }
+    });
   });
 }
 

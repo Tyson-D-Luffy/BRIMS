@@ -1,6 +1,7 @@
 import { db, ensureAuth } from "../config/firebase-client.ts";
 import { 
   doc, 
+  collection,
   runTransaction, 
   getDoc
 } from "firebase/firestore";
@@ -133,6 +134,152 @@ export class PrintService {
   }
 
   /**
+   * Logs an interactive or operational print event to BOTH the individual Batch Sheet history
+   * and the central application-wide batch_process_audit_logs.
+   */
+  static async logPrintAction(
+    batchId: string,
+    sheetId: string,
+    action: 
+      | 'PRINT_BUTTON_CLICKED'
+      | 'PRINT_INITIATED'
+      | 'PDF_DOWNLOAD_INITIATED'
+      | 'PDF_DOWNLOADED'
+      | 'PRINTING_ISSUE_SELECTED'
+      | 'PRINTING_ISSUE_REPORTED'
+      | 'REPRINT_PAGES_SELECTED'
+      | 'REPRINT_BUTTON_CLICKED'
+      | 'REPRINT_INITIATED'
+      | 'PRINT_COMPLETED_SELECTED'
+      | 'E_SIGNATURE_INITIATED'
+      | 'E_SIGNATURE_VERIFIED'
+      | 'PRINT_COMPLETED'
+      | 'PRINT_SEQUENCE_ADVANCED'
+      | 'PRINT_SEQUENCE_COMPLETED'
+      | 'E_SIGNATURE_FAILED'
+      | 'PRINT_LOCK_RELEASED'
+      | 'PRINT_INTERRUPTED'
+      | 'LOCK_RELEASED',
+    user: any,
+    details?: any,
+    metadata?: any
+  ) {
+    if (!batchId) return;
+    await ensureAuth();
+
+    try {
+      return await runTransaction(db, async (transaction) => {
+        const batchRef = doc(db, "production_batches", batchId);
+        const batchDoc = await transaction.get(batchRef);
+
+        if (!batchDoc.exists()) return;
+        const batchData = batchDoc.data() as BatchIssuance;
+        const sheets = initializeBatchSheetsHelper(batchData);
+
+        const sheetIndex = sheets.findIndex(
+          s => s.id === sheetId || String(s.sequenceIndex) === sheetId || s.batchNumber === sheetId
+        );
+        if (sheetIndex === -1) return;
+
+        const targetSheet = sheets[sheetIndex];
+        const nowIso = new Date().toISOString();
+        const nowMs = Date.now();
+        const auditEventId = `AUD-PRT-${nowMs}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+
+        const reasonText = details?.reason || details?.changeReason || details?.failureReason || details?.comments || `Print Action: ${action.replace(/_/g, ' ')}`;
+
+        const historyEntry: BatchSheetPrintHistoryEntry = {
+          id: auditEventId,
+          printJobId: details?.printJobId || targetSheet.currentPrintJobId || null,
+          parentPrintJobId: details?.parentPrintJobId || null,
+          action: action as any,
+          status: targetSheet.status,
+          timestamp: nowIso,
+          performedBy: user?.displayName || user?.username || user?.email || 'Operator',
+          userId: user?.uid || 'system',
+          userEmail: user?.email || 'operator@brims.internal',
+          userRole: user?.role || 'ADMIN',
+          employeeId: user?.employeeId || 'N/A',
+          branch: (batchData as any).branch || user?.branch || 'Masulkhana',
+          attemptNumber: details?.attemptNumber || targetSheet.attemptCount || 1,
+          printType: details?.printType || (targetSheet.reprintPages ? 'PAGE_REPRINT' : 'FULL_PRINT'),
+          requestedPages: details?.requestedPages || targetSheet.reprintPages || 'ALL',
+          originalPagesReprinted: details?.originalPagesReprinted || targetSheet.reprintPages || null,
+          totalPages: details?.totalPages || targetSheet.totalPages || 60,
+          deliveryMethod: details?.deliveryMethod || targetSheet.lastDeliveryMethod || 'PDF_DOWNLOAD',
+          reason: reasonText,
+          issueReason: details?.issueReason || targetSheet.issueReason || null,
+          comments: details?.comments || null,
+          documentVersion: batchData.version || 'v1.0',
+          signatureId: details?.signatureId || null,
+          signatureMeaning: details?.signatureMeaning || null,
+          ipAddress: metadata?.ip || null,
+          userAgent: metadata?.userAgent || null
+        };
+
+        if (!targetSheet.history) targetSheet.history = [];
+        targetSheet.history.push(historyEntry);
+        sheets[sheetIndex] = targetSheet;
+
+        transaction.update(batchRef, sanitizeForFirestore({
+          batchSheets: sheets,
+          updatedAt: nowIso,
+          updatedBy: user?.uid || null
+        }));
+
+        // Log into central batch_process_audit_logs
+        await AuditService.logAction(
+          user?.uid || 'system',
+          user?.email || 'operator@brims.internal',
+          action,
+          batchId,
+          "Batch Sheet Printing",
+          { 
+            sheetId: targetSheet.id, 
+            batchNumber: targetSheet.batchNumber,
+            status: targetSheet.status,
+            attemptNumber: targetSheet.attemptCount
+          },
+          { 
+            batchSheetRequestId: batchData.batchNumber || batchId,
+            requestId: batchData.batchNumber || batchId,
+            batchNumber: targetSheet.batchNumber,
+            sheetId: targetSheet.id, 
+            sequenceNumber: sheetIndex + 1,
+            attemptNumber: details?.attemptNumber || targetSheet.attemptCount || 1,
+            printJobId: details?.printJobId || targetSheet.currentPrintJobId,
+            requestedPages: details?.requestedPages || targetSheet.reprintPages || 'ALL',
+            totalPages: details?.totalPages || targetSheet.totalPages || 60,
+            deliveryMethod: details?.deliveryMethod || targetSheet.lastDeliveryMethod || 'PDF_DOWNLOAD',
+            action,
+            status: targetSheet.status,
+            reason: reasonText,
+            issueReason: details?.issueReason || targetSheet.issueReason,
+            comments: details?.comments,
+            signatureId: details?.signatureId,
+            signatureMeaning: details?.signatureMeaning,
+            auditEventId
+          },
+          `[Batch Sheet Printing] ${action.replace(/_/g, ' ')} for Batch Sheet #${sheetIndex + 1} (${targetSheet.batchNumber})`,
+          transaction,
+          details?.signatureId,
+          details?.signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          (batchData as any).branch || user?.branch || 'Masulkhana',
+          (batchData as any).branch || user?.branch || 'Masulkhana',
+          user?.role || 'ADMIN',
+          user?.displayName || user?.username || user?.email
+        );
+
+        return { success: true, auditEventId, sheet: targetSheet };
+      });
+    } catch (err: any) {
+      console.warn(`[PrintService] Failed to logPrintAction (${action}):`, err?.message);
+    }
+  }
+
+  /**
    * Initiates print/download for a batch sheet.
    * Enforces backend-side sequential verification and single active print operation lock.
    */
@@ -190,6 +337,7 @@ export class PrintService {
       const targetSheet = sheets[sheetIndex];
       const nowIso = new Date().toISOString();
       const nowMs = Date.now();
+      const auditEventId = `AUD-PRT-${nowMs}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
       // -------------------------------------------------------------
       // 1. Strict Backend Sequential Verification
@@ -239,7 +387,7 @@ export class PrintService {
         userEmail: user.email || null,
         userRole: user.role || 'ADMIN',
         employeeId: user.employeeId || 'N/A',
-        branch: (batchData as any).branch || 'Branch 1',
+        branch: (batchData as any).branch || user?.branch || 'Masulkhana',
         issueReason: reprintReason || null,
         documentVersion: batchData.version || 'v1.0'
       };
@@ -247,6 +395,7 @@ export class PrintService {
       if (!targetSheet.printJobs) targetSheet.printJobs = [];
       targetSheet.printJobs.push(newPrintJob);
 
+      const previousStatus = targetSheet.status;
       targetSheet.status = 'AWAITING_USER_CONFIRMATION';
       targetSheet.attemptCount = attemptNum;
       targetSheet.currentPrintJobId = printJobId;
@@ -264,7 +413,7 @@ export class PrintService {
       // -------------------------------------------------------------
       const auditAction = isReprint ? 'REPRINT_INITIATED' : 'PRINT_INITIATED';
       const historyEntry: BatchSheetPrintHistoryEntry = {
-        id: `hist-${nowMs}-${Math.random().toString(36).substring(2, 6)}`,
+        id: auditEventId,
         printJobId,
         parentPrintJobId: newPrintJob.parentPrintJobId || null,
         action: auditAction,
@@ -275,7 +424,7 @@ export class PrintService {
         userEmail: user.email || 'operator@brims.internal',
         userRole: user.role || 'ADMIN',
         employeeId: user.employeeId || 'N/A',
-        branch: (batchData as any).branch || 'Branch 1',
+        branch: (batchData as any).branch || user?.branch || 'Masulkhana',
         attemptNumber: attemptNum,
         printType,
         requestedPages: newPrintJob.requestedPages,
@@ -312,37 +461,52 @@ export class PrintService {
 
       transaction.update(batchRef, sanitizeForFirestore(updateData));
 
-      // Audit Log in batch_process_audit_logs
+      // Audit Log in central batch_process_audit_logs
       await AuditService.logAction(
         user.uid,
         user.email,
         auditAction,
         batchId,
-        "BATCH_SHEET_ITEM",
-        { sheetId: targetSheet.id, batchNumber: targetSheet.batchNumber, attemptNumber: attemptNum - 1 },
+        "Batch Sheet Printing",
         { 
           sheetId: targetSheet.id, 
           batchNumber: targetSheet.batchNumber, 
+          status: previousStatus,
+          attemptNumber: attemptNum - 1 
+        },
+        { 
+          batchSheetRequestId: batchData.batchNumber || batchId,
+          requestId: batchData.batchNumber || batchId,
+          batchNumber: targetSheet.batchNumber,
+          sheetId: targetSheet.id, 
+          sequenceNumber: sheetIndex + 1,
           printJobId,
           attemptNumber: attemptNum,
           deliveryMethod,
           printType,
           requestedPages: newPrintJob.requestedPages,
-          totalPages: newPrintJob.totalPages
+          totalPages: newPrintJob.totalPages,
+          status: 'AWAITING_USER_CONFIRMATION',
+          auditEventId
         },
         `${auditAction}: Batch Sheet ${targetSheet.batchNumber} (Attempt #${attemptNum}, Delivery: ${deliveryMethod})`,
         transaction,
         undefined,
         undefined,
         metadata?.ip,
-        metadata?.userAgent
+        metadata?.userAgent,
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        user?.role || 'ADMIN',
+        user?.displayName || user?.username || user?.email
       );
 
       return {
         batchId,
         sheet: targetSheet,
         batchSheets: sheets,
-        printJob: newPrintJob
+        printJob: newPrintJob,
+        auditEventId
       };
     });
   }
@@ -390,8 +554,10 @@ export class PrintService {
       if (sheetIndex === -1) throw new Error("Batch Sheet not found.");
 
       const targetSheet = sheets[sheetIndex];
+      const previousStatus = targetSheet.status;
       const nowIso = new Date().toISOString();
       const nowMs = Date.now();
+      const auditEventId = `AUD-PRT-${nowMs}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
       targetSheet.status = 'PRINTING_ISSUE';
       targetSheet.issueReason = issueReason;
@@ -410,7 +576,7 @@ export class PrintService {
       }
 
       const historyEntry: BatchSheetPrintHistoryEntry = {
-        id: `hist-${nowMs}-${Math.random().toString(36).substring(2, 6)}`,
+        id: auditEventId,
         printJobId: targetSheet.currentPrintJobId || null,
         action: 'PRINTING_ISSUE_REPORTED',
         status: 'PRINTING_ISSUE',
@@ -420,7 +586,7 @@ export class PrintService {
         userEmail: user?.email || 'operator@brims.internal',
         userRole: user?.role || 'ADMIN',
         employeeId: user?.employeeId || 'N/A',
-        branch: (batchData as any).branch || 'Branch 1',
+        branch: (batchData as any).branch || user?.branch || 'Masulkhana',
         attemptNumber: targetSheet.attemptCount || 1,
         requestedPages: pageValidation.normalizedString,
         originalPagesReprinted: pageValidation.normalizedString,
@@ -442,41 +608,58 @@ export class PrintService {
         updatedBy: user?.uid || null
       }));
 
-      // Audit Log in batch_process_audit_logs
+      // Audit Log in central batch_process_audit_logs
       await AuditService.logAction(
         user?.uid || 'unknown',
         user?.email || 'operator@brims.internal',
         "PRINTING_ISSUE_REPORTED",
         batchId,
-        "BATCH_SHEET_ITEM",
-        { sheetId: targetSheet.id, batchNumber: targetSheet.batchNumber },
+        "Batch Sheet Printing",
         { 
           sheetId: targetSheet.id, 
           batchNumber: targetSheet.batchNumber,
+          status: previousStatus 
+        },
+        { 
+          batchSheetRequestId: batchData.batchNumber || batchId,
+          requestId: batchData.batchNumber || batchId,
+          batchNumber: targetSheet.batchNumber,
+          sheetId: targetSheet.id, 
+          sequenceNumber: sheetIndex + 1,
+          printJobId: targetSheet.currentPrintJobId,
           issueReason,
           reprintPages: pageValidation.normalizedString,
-          comments
+          requestedPages: pageValidation.normalizedString,
+          comments,
+          status: 'PRINTING_ISSUE',
+          auditEventId
         },
         `PRINTING_ISSUE_REPORTED: Batch Sheet ${targetSheet.batchNumber} - Reason: ${issueReason}, Pages: ${pageValidation.normalizedString}`,
         transaction,
         undefined,
         undefined,
         metadata?.ip,
-        metadata?.userAgent
+        metadata?.userAgent,
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        user?.role || 'ADMIN',
+        user?.displayName || user?.username || user?.email
       );
 
       return {
         batchId,
         sheet: targetSheet,
         batchSheets: sheets,
-        pageValidation
+        pageValidation,
+        auditEventId
       };
     });
   }
 
   /**
-   * Completes printing for a batch sheet after user confirmation and optional electronic signature.
-   * Sets printStatus = 'PRINT_COMPLETED', captures full completion audit, and unlocks the next sheet.
+   * Completes printing for a batch sheet after mandatory 21 CFR Part 11 electronic signature verification.
+   * Sets printStatus = 'PRINT_COMPLETED', stores immutable electronic signature, logs central audit,
+   * advances sequence, and unlocks the next sheet.
    */
   static async completePrintJob(
     batchId: string,
@@ -490,9 +673,27 @@ export class PrintService {
     if (!sheetId) throw new Error("Sheet ID is required.");
     if (!user || !user.uid) throw new Error("User details required.");
 
-    if (signaturePassword) {
-      const userEmail = user.email || user.firestoreEmail || user.username || 'operator@brims.internal';
+    // Mandatory Electronic Signature challenge
+    const userEmail = user.email || user.firestoreEmail || user.username || 'operator@brims.internal';
+    try {
+      if (!signaturePassword || !signaturePassword.trim()) {
+        throw new Error("Password is required for electronic signature verification.");
+      }
       await SignatureService.verifyCredentials(userEmail, signaturePassword);
+    } catch (sigErr: any) {
+      // Log E_SIGNATURE_FAILED audit event to both individual sheet and central batch_process_audit_logs
+      await this.logPrintAction(
+        batchId,
+        sheetId,
+        "E_SIGNATURE_FAILED",
+        user,
+        {
+          failureReason: "Electronic signature verification failed (incorrect credentials).",
+          comments
+        },
+        metadata
+      );
+      throw new Error("Electronic signature verification failed.");
     }
 
     await ensureAuth();
@@ -513,8 +714,10 @@ export class PrintService {
       if (sheetIndex === -1) throw new Error("Batch Sheet not found.");
 
       const targetSheet = sheets[sheetIndex];
+      const previousStatus = targetSheet.status;
       const nowIso = new Date().toISOString();
       const nowMs = Date.now();
+      const auditEventId = `AUD-PRT-${nowMs}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
       const newPrintCount = (targetSheet.printCount || 0) + 1;
       targetSheet.status = 'PRINT_COMPLETED';
@@ -536,30 +739,55 @@ export class PrintService {
         currentJob.completedAt = nowIso;
       }
 
-      // Record e-signature if configured
-      let signatureId: string | undefined;
+      // -------------------------------------------------------------
+      // 1. Create and Store 21 CFR Part 11 Electronic Signature Record
+      // -------------------------------------------------------------
       const signatureMeaning = `Certified successful print and verification of Batch Sheet #${targetSheet.sequenceIndex + 1} (${targetSheet.batchNumber}). No pages require reprinting.`;
-      
-      const sigResult = await SignatureService.signAction(
-        user.uid,
-        user.email,
-        "PRINT_COMPLETED",
-        "BATCH_SHEET_ITEM",
-        `${batchId}_${targetSheet.id}`,
+      const signatureRef = doc(collection(db, "electronic_signatures"));
+      const signatureId = signatureRef.id;
+
+      const signatureData: any = {
+        id: signatureId,
+        batchSheetRequestId: batchData.batchNumber || batchId,
+        batchSheetId: targetSheet.id,
+        batchNumber: targetSheet.batchNumber,
+        printJobId: targetSheet.currentPrintJobId || `PJ-${targetSheet.batchNumber}-${targetSheet.attemptCount || 1}`,
+        attemptNumber: targetSheet.attemptCount || 1,
+        userId: user.uid,
+        employeeId: user.employeeId || 'N/A',
+        signerFullName: user.displayName || user.username || user.name || user.email || 'Operator',
+        signerRole: user.role || 'ADMIN',
+        branch: (batchData as any).branch || user?.branch || 'Masulkhana',
+        date: nowIso.split('T')[0],
+        time: new Date().toLocaleTimeString(),
+        timestamp: nowIso,
+        meaning: "Print Completion Confirmation",
         signatureMeaning,
-        metadata?.ip || "unknown",
-        metadata?.userAgent || "unknown",
-        transaction
-      );
-      signatureId = sigResult?.id;
+        statement: "I confirm that I have checked the printed/downloaded Batch Sheet and that the required pages have been printed satisfactorily.",
+        action: "PRINT_COMPLETED",
+        actionType: "PRINT_COMPLETED",
+        entityType: "BATCH_SHEET_ITEM",
+        entityId: `${batchId}_${targetSheet.id}`,
+        documentVersion: batchData.version || 'v1.0',
+        batchSheetMasterVersion: (batchData as any).masterSnapshot?.version || batchData.version || 'v1.0',
+        originalPageCount: targetSheet.totalPages || 60,
+        requestedPages: targetSheet.reprintPages || 'ALL',
+        verified: true,
+        auditEventId,
+        ipAddress: metadata?.ip || null,
+        userAgent: metadata?.userAgent || null,
+        createdAt: nowIso
+      };
+
+      transaction.set(signatureRef, sanitizeForFirestore(signatureData));
 
       // -------------------------------------------------------------
-      // History Entry (PRINT_COMPLETED)
+      // 2. Audit Trail: E_SIGNATURE_VERIFIED
       // -------------------------------------------------------------
-      const historyEntry: BatchSheetPrintHistoryEntry = {
-        id: `hist-${nowMs}-${Math.random().toString(36).substring(2, 6)}`,
+      const eSigHistoryEntry: BatchSheetPrintHistoryEntry = {
+        id: `AUD-SIG-${nowMs}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`,
         printJobId: targetSheet.currentPrintJobId || null,
-        action: 'PRINT_COMPLETED',
+        action: 'PRINT_COMPLETED' as any,
         status: 'PRINT_COMPLETED',
         timestamp: nowIso,
         performedBy: user.displayName || user.username || user.email || 'Operator',
@@ -567,24 +795,24 @@ export class PrintService {
         userEmail: user.email || 'operator@brims.internal',
         userRole: user.role || 'ADMIN',
         employeeId: user.employeeId || 'N/A',
-        branch: (batchData as any).branch || 'Branch 1',
+        branch: (batchData as any).branch || user?.branch || 'Masulkhana',
         attemptNumber: targetSheet.attemptCount || 1,
         deliveryMethod: targetSheet.lastDeliveryMethod || 'PDF_DOWNLOAD',
         copyNumber: newPrintCount,
         totalPages: targetSheet.totalPages || 60,
         documentVersion: batchData.version || 'v1.0',
-        signatureId: signatureId || null,
-        signatureMeaning: signatureMeaning || null,
-        reason: comments || 'Print output verified and completed successfully',
+        signatureId,
+        signatureMeaning,
+        reason: comments || 'Electronic signature verified for print completion',
         ipAddress: metadata?.ip || null,
         userAgent: metadata?.userAgent || null
       };
 
       if (!targetSheet.history) targetSheet.history = [];
-      targetSheet.history.push(historyEntry);
+      targetSheet.history.push(eSigHistoryEntry);
 
       // -------------------------------------------------------------
-      // Unlock NEXT Sequential Sheet
+      // 3. Unlock NEXT Sequential Sheet
       // -------------------------------------------------------------
       let unlockedNextSheet: BatchSheetItem | null = null;
       if (sheetIndex + 1 < sheets.length) {
@@ -599,7 +827,7 @@ export class PrintService {
       sheets[sheetIndex] = targetSheet;
 
       // -------------------------------------------------------------
-      // Check if ALL sheets in batch are completed
+      // 4. Check if ALL sheets in batch are completed
       // -------------------------------------------------------------
       const allPrinted = sheets.every(s => s.status === 'PRINT_COMPLETED' || s.status === 'PRINTED' || s.status === 'REPRINTED');
 
@@ -633,65 +861,162 @@ export class PrintService {
 
       transaction.update(batchRef, sanitizeForFirestore(updateData));
 
-      // Audit Log in batch_process_audit_logs
+      // -------------------------------------------------------------
+      // 5. Log E_SIGNATURE_VERIFIED in central batch_process_audit_logs
+      // -------------------------------------------------------------
+      await AuditService.logAction(
+        user.uid,
+        user.email,
+        "E_SIGNATURE_VERIFIED",
+        batchId,
+        "Batch Sheet Printing",
+        null,
+        { 
+          batchSheetRequestId: batchData.batchNumber || batchId,
+          requestId: batchData.batchNumber || batchId,
+          batchNumber: targetSheet.batchNumber,
+          sheetId: targetSheet.id, 
+          sequenceNumber: sheetIndex + 1,
+          signatureId,
+          signatureMeaning,
+          employeeId: user.employeeId || 'N/A',
+          auditEventId
+        },
+        `E-Signature Verified: ${signatureMeaning}`,
+        transaction,
+        signatureId,
+        signatureMeaning,
+        metadata?.ip,
+        metadata?.userAgent,
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        user?.role || 'ADMIN',
+        user?.displayName || user?.username || user?.email
+      );
+
+      // -------------------------------------------------------------
+      // 6. Log PRINT_COMPLETED in central batch_process_audit_logs
+      // -------------------------------------------------------------
       await AuditService.logAction(
         user.uid,
         user.email,
         "PRINT_COMPLETED",
         batchId,
-        "BATCH_SHEET_ITEM",
-        { sheetId: targetSheet.id, batchNumber: targetSheet.batchNumber, status: 'AWAITING_USER_CONFIRMATION' },
+        "Batch Sheet Printing",
         { 
           sheetId: targetSheet.id, 
           batchNumber: targetSheet.batchNumber, 
+          status: previousStatus 
+        },
+        { 
+          batchSheetRequestId: batchData.batchNumber || batchId,
+          requestId: batchData.batchNumber || batchId,
+          batchNumber: targetSheet.batchNumber,
+          sheetId: targetSheet.id, 
+          sequenceNumber: sheetIndex + 1,
           status: 'PRINT_COMPLETED',
           printJobId: targetSheet.currentPrintJobId,
           attemptNumber: targetSheet.attemptCount,
+          copyNumber: newPrintCount,
           unlockedNextSheetId: unlockedNextSheet?.id,
-          allPrinted
+          unlockedNextBatchNumber: unlockedNextSheet?.batchNumber,
+          allPrinted,
+          signatureId,
+          signatureMeaning,
+          auditEventId
         },
-        `PRINT_COMPLETED: Batch Sheet ${targetSheet.batchNumber} (Job: ${targetSheet.currentPrintJobId}, Copy: ${newPrintCount})`,
+        `PRINT_COMPLETED: Batch Sheet #${sheetIndex + 1} (${targetSheet.batchNumber}) verified and certified by ${user.displayName || user.username || user.email}`,
         transaction,
         signatureId,
         signatureMeaning,
         metadata?.ip,
-        metadata?.userAgent
+        metadata?.userAgent,
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        user?.role || 'ADMIN',
+        user?.displayName || user?.username || user?.email
       );
 
+      // -------------------------------------------------------------
+      // 7. Log PRINT_SEQUENCE_ADVANCED if next sheet unlocked
+      // -------------------------------------------------------------
       if (unlockedNextSheet) {
         await AuditService.logAction(
           user.uid,
           user.email,
           "PRINT_SEQUENCE_ADVANCED",
           batchId,
-          "BATCH_SHEET_ITEM",
-          { completedSheetId: targetSheet.id, completedBatchNumber: targetSheet.batchNumber },
-          { nextReadySheetId: unlockedNextSheet.id, nextBatchNumber: unlockedNextSheet.batchNumber },
-          `PRINT_SEQUENCE_ADVANCED: Unlocked next Batch Sheet ${unlockedNextSheet.batchNumber} (#${unlockedNextSheet.sequenceIndex + 1})`,
-          transaction
+          "Batch Sheet Printing",
+          { 
+            completedSheetId: targetSheet.id, 
+            completedBatchNumber: targetSheet.batchNumber,
+            completedSequenceIndex: sheetIndex + 1
+          },
+          { 
+            batchSheetRequestId: batchData.batchNumber || batchId,
+            requestId: batchData.batchNumber || batchId,
+            completedBatchNumber: targetSheet.batchNumber,
+            nextReadySheetId: unlockedNextSheet.id, 
+            nextBatchNumber: unlockedNextSheet.batchNumber,
+            nextSequenceIndex: unlockedNextSheet.sequenceIndex + 1,
+            status: 'READY_TO_PRINT',
+            auditEventId: `AUD-ADV-${nowMs}`
+          },
+          `PRINT_SEQUENCE_ADVANCED: Unlocked next Batch Sheet #${unlockedNextSheet.sequenceIndex + 1} (${unlockedNextSheet.batchNumber})`,
+          transaction,
+          undefined,
+          undefined,
+          metadata?.ip,
+          metadata?.userAgent,
+          (batchData as any).branch || user?.branch || 'Masulkhana',
+          (batchData as any).branch || user?.branch || 'Masulkhana',
+          user?.role || 'ADMIN',
+          user?.displayName || user?.username || user?.email
         );
       }
 
+      // -------------------------------------------------------------
+      // 8. Log PRINT_SEQUENCE_COMPLETED if all sheets completed
+      // -------------------------------------------------------------
       if (allPrinted) {
         await AuditService.logAction(
           user.uid,
           user.email,
           "PRINT_SEQUENCE_COMPLETED",
           batchId,
-          "PRODUCTION_BATCH",
-          { totalSheets: sheets.length, previousBatchStatus: batchData.status },
+          "Batch Sheet Printing",
           { 
             totalSheets: sheets.length, 
-            newBatchStatus: 'READY_FOR_PRODUCTION_HANDOVER',
-            totalPrintAttempts: (batchData.totalPrintAttempts || 0),
-            totalReprintAttempts: (batchData.totalReprintAttempts || 0),
-            completedAt: nowIso,
-            branch: (batchData as any).branch || 'Branch 1'
+            previousBatchStatus: batchData.status 
           },
-          `PRINT_SEQUENCE_COMPLETED: All ${sheets.length} Batch Sheets printed. Batch status updated to READY_FOR_PRODUCTION_HANDOVER.`,
+          { 
+            batchSheetRequestId: batchData.batchNumber || batchId,
+            requestId: batchData.batchNumber || batchId,
+            totalBatchSheets: sheets.length, 
+            completedBatchSheets: sheets.length,
+            newBatchStatus: 'READY_FOR_PRODUCTION_HANDOVER',
+            totalPrintAttempts: (batchData.totalPrintAttempts || 0) + 1,
+            totalReprintAttempts: (batchData.totalReprintAttempts || 0),
+            issueCount: sheets.filter(s => (s.attemptCount || 0) > 1).length,
+            startTime: batchData.createdAt || nowIso,
+            endTime: nowIso,
+            finalBatchNumber: targetSheet.batchNumber,
+            finalActingUser: user.displayName || user.username || user.email,
+            branch: (batchData as any).branch || user?.branch || 'Masulkhana',
+            signatureId,
+            signatureMeaning,
+            auditEventId: `AUD-SEQ-END-${nowMs}`
+          },
+          `PRINT_SEQUENCE_COMPLETED: All ${sheets.length} Batch Sheets printed and certified. Batch status advanced to READY_FOR_PRODUCTION_HANDOVER.`,
           transaction,
           signatureId,
-          signatureMeaning
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          (batchData as any).branch || user?.branch || 'Masulkhana',
+          (batchData as any).branch || user?.branch || 'Masulkhana',
+          user?.role || 'ADMIN',
+          user?.displayName || user?.username || user?.email
         );
       }
 
@@ -701,7 +1026,8 @@ export class PrintService {
         batchSheets: sheets,
         unlockedNextSheet,
         allPrinted,
-        signatureId
+        signatureId,
+        auditEventId
       };
     });
 
@@ -715,7 +1041,7 @@ export class PrintService {
   }
 
   /**
-   * Releases an active print lock.
+   * Releases an active print lock and logs to audit trail.
    */
   static async releasePrintLock(
     batchId: string,
@@ -741,11 +1067,33 @@ export class PrintService {
 
       const targetSheet = sheets[sheetIndex];
       const nowIso = new Date().toISOString();
+      const nowMs = Date.now();
+      const auditEventId = `AUD-REL-${nowMs}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
       targetSheet.activeLock = null;
-      if (targetSheet.status === 'PRINTING' || targetSheet.status === 'REPRINTING') {
-        targetSheet.status = targetSheet.status === 'REPRINTING' ? 'REPRINT_REQUIRED' : 'READY_TO_PRINT';
+      if (targetSheet.status === 'PRINTING' || targetSheet.status === 'REPRINTING' || targetSheet.status === 'AWAITING_USER_CONFIRMATION') {
+        targetSheet.status = targetSheet.reprintPages ? 'REPRINT_REQUIRED' : 'READY_TO_PRINT';
       }
+
+      const historyEntry: BatchSheetPrintHistoryEntry = {
+        id: auditEventId,
+        printJobId: targetSheet.currentPrintJobId || null,
+        action: 'LOCK_RELEASED',
+        status: targetSheet.status,
+        timestamp: nowIso,
+        performedBy: user?.displayName || user?.username || user?.email || 'Operator',
+        userId: user?.uid || 'unknown',
+        userEmail: user?.email || 'operator@brims.internal',
+        userRole: user?.role || 'ADMIN',
+        employeeId: user?.employeeId || 'N/A',
+        branch: (batchData as any).branch || user?.branch || 'Masulkhana',
+        reason: reason || 'Print lock released manually',
+        ipAddress: metadata?.ip || null,
+        userAgent: metadata?.userAgent || null
+      };
+
+      if (!targetSheet.history) targetSheet.history = [];
+      targetSheet.history.push(historyEntry);
 
       sheets[sheetIndex] = targetSheet;
 
@@ -753,26 +1101,43 @@ export class PrintService {
         batchSheets: sheets,
         activePrintLock: null,
         updatedAt: nowIso,
-        updatedBy: user.uid
+        updatedBy: user?.uid || null
       }));
 
       await AuditService.logAction(
-        user.uid,
-        user.email,
-        "LOCK_RELEASED",
+        user?.uid || 'unknown',
+        user?.email || 'operator@brims.internal',
+        "PRINT_LOCK_RELEASED",
         batchId,
-        "BATCH_SHEET_ITEM",
-        { sheetId: targetSheet.id },
-        { sheetId: targetSheet.id, status: targetSheet.status },
-        `LOCK_RELEASED: Print lock released for Batch Sheet ${targetSheet.batchNumber}. Reason: ${reason}`,
+        "Batch Sheet Printing",
+        { sheetId: targetSheet.id, batchNumber: targetSheet.batchNumber },
+        { 
+          batchSheetRequestId: batchData.batchNumber || batchId,
+          requestId: batchData.batchNumber || batchId,
+          batchNumber: targetSheet.batchNumber,
+          sheetId: targetSheet.id, 
+          newStatus: targetSheet.status,
+          reason,
+          auditEventId
+        },
+        `PRINT_LOCK_RELEASED: Batch Sheet ${targetSheet.batchNumber} - ${reason}`,
         transaction,
         undefined,
         undefined,
         metadata?.ip,
-        metadata?.userAgent
+        metadata?.userAgent,
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        (batchData as any).branch || user?.branch || 'Masulkhana',
+        user?.role || 'ADMIN',
+        user?.displayName || user?.username || user?.email
       );
 
-      return { batchId, sheet: targetSheet, batchSheets: sheets };
+      return {
+        batchId,
+        sheet: targetSheet,
+        batchSheets: sheets,
+        auditEventId
+      };
     });
   }
 

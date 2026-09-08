@@ -49,7 +49,7 @@ export const updateMasterSchema = z.object({
 
 export const masterStatusSchema = z.object({
   body: z.object({
-    status: z.enum(["DRAFT", "UNDER_REVIEW", "APPROVED", "RETIRED", "ACTIVE", "INACTIVE"]),
+    status: z.enum(["DRAFT", "UNDER_REVIEW", "PENDING_APPROVAL", "APPROVED", "RETIRED", "ACTIVE", "INACTIVE", "RETURNED", "UNDER_UPDATE", "REJECTED"]),
     changeReason: changeReasonSchema.optional(),
   }).passthrough(),
 });

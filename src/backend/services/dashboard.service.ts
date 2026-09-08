@@ -291,4 +291,182 @@ export class DashboardService {
       return [];
     }
   }
+
+  static async getMonthlyBatchRequests(monthParam?: string | number, yearParam?: string | number, selectedBranch?: string) {
+    const now = new Date();
+    const targetYear = yearParam !== undefined && yearParam !== null && yearParam !== "" ? Number(yearParam) : now.getFullYear();
+    const targetMonth = monthParam !== undefined && monthParam !== null && monthParam !== "" ? Number(monthParam) : now.getMonth();
+
+    const branchSuffix = selectedBranch ? `_${selectedBranch}` : "";
+    const cacheKey = `monthly_batch_requests_${targetYear}_${targetMonth}${branchSuffix}`;
+    const cached = CacheService.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      await ensureAuth();
+      let qBatches = collection(db, "production_batches") as any;
+      let qProducts = collection(db, "product_masters") as any;
+
+      if (selectedBranch) {
+        qBatches = query(qBatches, where("branch", "==", selectedBranch));
+        qProducts = query(qProducts, where("branch", "==", selectedBranch));
+      }
+
+      const [batchesSnapshot, productsSnapshot] = await Promise.all([
+        getDocs(qBatches),
+        getDocs(qProducts)
+      ]);
+
+      const productsMap = new Map<string, any>();
+      productsSnapshot.docs.forEach(doc => {
+        productsMap.set(doc.id, { id: doc.id, ...(doc.data() as any) });
+      });
+
+      const batches = batchesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+
+      const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+      
+      const dailyBreakdown: Array<{
+        day: number;
+        date: string;
+        label: string;
+        pending: number;
+        approved: number;
+        rejected: number;
+        total: number;
+      }> = [];
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        const dayLabel = new Date(targetYear, targetMonth, d).toLocaleString("en-US", { month: "short" }) + ` ${d}`;
+        dailyBreakdown.push({
+          day: d,
+          date: dateStr,
+          label: dayLabel,
+          pending: 0,
+          approved: 0,
+          rejected: 0,
+          total: 0
+        });
+      }
+
+      let pendingCount = 0;
+      let approvedCount = 0;
+      let rejectedCount = 0;
+
+      const categoryStatusDetails = {
+        pending: {} as Record<string, number>,
+        approved: {} as Record<string, number>,
+        rejected: {} as Record<string, number>
+      };
+
+      const monthBatches: any[] = [];
+
+      batches.forEach(b => {
+        const dateString = b.createdAt || b.manufacturingDate || b.updatedAt;
+        if (!dateString) return;
+        const bDate = new Date(dateString);
+        if (isNaN(bDate.getTime())) return;
+
+        if (bDate.getFullYear() === targetYear && bDate.getMonth() === targetMonth) {
+          const rawStatus = (b.status || "DRAFT").toUpperCase();
+          let category: "pending" | "approved" | "rejected" = "pending";
+
+          if (["REJECTED", "CANCELLED", "RETURNED"].includes(rawStatus)) {
+            category = "rejected";
+            rejectedCount++;
+          } else if (["APPROVED", "ISSUED", "IN_PROGRESS", "PRODUCTION_IN_PROGRESS", "HANDED_OVER", "COMPLETED"].includes(rawStatus)) {
+            category = "approved";
+            approvedCount++;
+          } else {
+            category = "pending";
+            pendingCount++;
+          }
+
+          categoryStatusDetails[category][rawStatus] = (categoryStatusDetails[category][rawStatus] || 0) + 1;
+
+          const dayOfMonth = bDate.getDate();
+          if (dayOfMonth >= 1 && dayOfMonth <= daysInMonth) {
+            const dayEntry = dailyBreakdown[dayOfMonth - 1];
+            if (dayEntry) {
+              dayEntry[category]++;
+              dayEntry.total++;
+            }
+          }
+
+          const product = productsMap.get(b.productId);
+          monthBatches.push({
+            id: b.id,
+            batchNumber: b.batchNumber || b.id,
+            productId: b.productId,
+            productName: product?.title || product?.name || b.productName || "Standard Formulation",
+            stage: product?.stage || b.stage || "Manufacturing",
+            status: rawStatus,
+            category,
+            createdAt: b.createdAt || dateString,
+            manufacturingDate: b.manufacturingDate,
+            branch: b.branch || "Masulkhana",
+            reason: b.returnedReason || b.rejectedReason || null
+          });
+        }
+      });
+
+      monthBatches.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      const totalRequests = pendingCount + approvedCount + rejectedCount;
+      const pendingPercentage = totalRequests > 0 ? Math.round((pendingCount / totalRequests) * 100) : 0;
+      const approvedPercentage = totalRequests > 0 ? Math.round((approvedCount / totalRequests) * 100) : 0;
+      const rejectedPercentage = totalRequests > 0 ? Math.round((rejectedCount / totalRequests) * 100) : 0;
+      const approvalRate = (approvedCount + rejectedCount) > 0 
+        ? Math.round((approvedCount / (approvedCount + rejectedCount)) * 100) 
+        : (approvedCount > 0 ? 100 : 0);
+
+      const monthName = new Date(targetYear, targetMonth, 1).toLocaleString("en-US", { month: "long" });
+
+      const result = {
+        month: targetMonth,
+        year: targetYear,
+        monthName,
+        monthYearLabel: `${monthName} ${targetYear}`,
+        summary: {
+          total: totalRequests,
+          pending: pendingCount,
+          approved: approvedCount,
+          rejected: rejectedCount,
+          pendingPercentage,
+          approvedPercentage,
+          rejectedPercentage,
+          approvalRate
+        },
+        distribution: [
+          { name: "Pending", value: pendingCount, percentage: pendingPercentage, color: "#f59e0b" },
+          { name: "Approved", value: approvedCount, percentage: approvedPercentage, color: "#10b981" },
+          { name: "Rejected", value: rejectedCount, percentage: rejectedPercentage, color: "#f43f5e" }
+        ],
+        dailyBreakdown,
+        categoryStatusDetails,
+        batches: monthBatches
+      };
+
+      CacheService.set(cacheKey, result, 60);
+      return result;
+    } catch (error) {
+      console.error("DashboardService.getMonthlyBatchRequests Error:", error);
+      return {
+        month: targetMonth,
+        year: targetYear,
+        monthName: new Date(targetYear, targetMonth, 1).toLocaleString("en-US", { month: "long" }),
+        monthYearLabel: `${new Date(targetYear, targetMonth, 1).toLocaleString("en-US", { month: "long" })} ${targetYear}`,
+        summary: { total: 0, pending: 0, approved: 0, rejected: 0, pendingPercentage: 0, approvedPercentage: 0, rejectedPercentage: 0, approvalRate: 0 },
+        distribution: [
+          { name: "Pending", value: 0, percentage: 0, color: "#f59e0b" },
+          { name: "Approved", value: 0, percentage: 0, color: "#10b981" },
+          { name: "Rejected", value: 0, percentage: 0, color: "#f43f5e" }
+        ],
+        dailyBreakdown: [],
+        categoryStatusDetails: { pending: {}, approved: {}, rejected: {} },
+        batches: []
+      };
+    }
+  }
 }

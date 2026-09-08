@@ -31,13 +31,17 @@ export class BatchNumberEngineController {
         item.status = 'DRAFT';
       }
 
-      const codeUpper = item.code?.trim().toUpperCase();
-      if (!codeUpper) {
+      const rawCode = item.code?.trim();
+      if (!rawCode) {
         return res.status(400).json({ success: false, message: "Code/Value is required" });
       }
 
+      // Allow lowercase / mixed case for recovery_component, generic, and process lookups
+      const allowLowerCase = ['recovery_component', 'generic', 'process'].includes(item.type);
+      const finalCode = allowLowerCase ? rawCode : rawCode.toUpperCase();
+
       // Normalize the code
-      item.code = codeUpper;
+      item.code = finalCode;
 
       // Query existing items of the same type to check for duplicates
       const q = query(collection(db, 'batch_number_masters'), where('type', '==', item.type));
@@ -46,7 +50,7 @@ export class BatchNumberEngineController {
       const isDuplicate = snap.docs.some(docSnap => {
         const d = docSnap.data();
         const existingCode = d.code?.trim().toUpperCase();
-        if (existingCode !== codeUpper) return false;
+        if (existingCode !== finalCode.toUpperCase()) return false;
 
         if (item.type === 'stage') {
           return d.productId === item.productId;
@@ -57,7 +61,7 @@ export class BatchNumberEngineController {
       if (isDuplicate) {
         return res.status(400).json({
           success: false,
-          message: `Duplicate value error: A master record for ${item.type.replace('_', ' ')} with value "${codeUpper}" already exists.`
+          message: `Duplicate value error: A master record for ${item.type.replace('_', ' ')} with value "${finalCode}" already exists.`
         });
       }
 
@@ -109,6 +113,13 @@ export class BatchNumberEngineController {
         return res.status(404).json({ success: false, message: "Master item not found" });
       }
       const oldVal = oldSnap.data();
+
+      if (updateData.code) {
+        const rawCode = updateData.code.trim();
+        const itemType = updateData.type || oldVal?.type;
+        const allowLowerCase = ['recovery_component', 'generic', 'process'].includes(itemType);
+        updateData.code = allowLowerCase ? rawCode : rawCode.toUpperCase();
+      }
 
       const user = req.user;
       let signatureId: string | undefined;

@@ -30,6 +30,9 @@ export const securityMiddleware = [
   helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+    originAgentCluster: false,
     frameguard: false,
   }),
   cors(corsOptions),

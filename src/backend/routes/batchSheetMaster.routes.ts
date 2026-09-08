@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { BatchSheetMasterController } from "../controllers/batchSheetMaster.controller.ts";
 import { authenticateToken, authorizeRoles, authorizePermissions } from "../middleware/auth.middleware.ts";
+import { authorizeWorkflowTransition } from "../middleware/workflowAuth.middleware.ts";
 import { enforceLock } from "../middleware/locking.middleware.ts";
 import { validate } from "../middleware/validate.middleware.ts";
 import { enforceSignature } from "../middleware/signature.middleware.ts";
@@ -28,21 +29,21 @@ router.post(
 router.get(
   "/", 
   authenticateToken, 
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA"]), 
+  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]), 
   BatchSheetMasterController.getAll
 );
 
 router.get(
   "/:id", 
   authenticateToken, 
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA"]), 
+  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]), 
   BatchSheetMasterController.getById
 );
 
 router.put(
   "/:id", 
   authenticateToken, 
-  authorizePermissions(["batch_sheet_master:edit"]), 
+  authorizeWorkflowTransition("BATCH_SHEET_MASTER", "edit"), 
   enforceLock("batch_sheet_masters"),
   validate(updateMasterSchema), 
   BatchSheetMasterController.update
@@ -61,18 +62,18 @@ router.delete(
 router.post(
   "/:id/retire",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:deactivate"]),
+  authorizeWorkflowTransition("BATCH_SHEET_MASTER", "retire"),
   enforceSignature("I certify that I am discontinuing this master record. This action is intentional and logged."),
   validate(newRecordSchema),
   BatchSheetMasterController.retire
 );
 
-// Request update for approved master
+// Request update for approved/rejected master
 router.post(
   "/:id/request-update",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:edit"]),
-  enforceSignature("I certify that I am requesting an update to this approved master record. This action will be logged and requires justification."),
+  authorizeWorkflowTransition("BATCH_SHEET_MASTER", "request-update"),
+  enforceSignature("I certify that I am requesting an update to this master record. This action will be logged and requires justification."),
   validate(newRecordSchema),
   BatchSheetMasterController.requestUpdate
 );
@@ -80,16 +81,25 @@ router.post(
 router.post(
   "/:id/submit",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:submit"]),
+  authorizeWorkflowTransition("BATCH_SHEET_MASTER", "submit"),
   enforceSignature("I certify that I have reviewed the updates to this master record and am submitting it for QA approval."),
   validate(newRecordSchema),
   BatchSheetMasterController.submitForReview
 );
 
 router.post(
+  "/:id/review",
+  authenticateToken,
+  authorizeWorkflowTransition("BATCH_SHEET_MASTER", "review"),
+  enforceSignature("I have reviewed this master record and recommend it for approval"),
+  validate(newRecordSchema),
+  BatchSheetMasterController.reviewMaster
+);
+
+router.post(
   "/:id/return",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:return", "batch_sheet_master:review", "batch_sheet_master:approve", "op:return_for_correction"]),
+  authorizeWorkflowTransition("BATCH_SHEET_MASTER", "return"),
   enforceLock("batch_sheet_masters"),
   enforceSignature("Returned for Correction"),
   BatchSheetMasterController.returnMaster
@@ -98,7 +108,7 @@ router.post(
 router.post(
   "/:id/resubmit",
   authenticateToken,
-  authorizePermissions(["batch_sheet_master:submit", "batch_sheet_master:create", "batch_sheet_master:edit"]),
+  authorizeWorkflowTransition("BATCH_SHEET_MASTER", "resubmit"),
   enforceLock("batch_sheet_masters"),
   enforceSignature("Resubmitted after correction"),
   BatchSheetMasterController.resubmit
@@ -141,7 +151,7 @@ router.patch(
 router.get(
   "/:id/check-lock", 
   authenticateToken, 
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA"]), 
+  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]), 
   BatchSheetMasterController.checkLock
 );
 

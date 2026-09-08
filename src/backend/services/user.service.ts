@@ -3,6 +3,7 @@ import { db, ensureAuth } from "../config/firebase-client.ts";
 import crypto from "crypto";
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where, orderBy, limit } from "firebase/firestore";
 import { AuditService } from "./audit.service.ts";
+import { getDefaultPermissionsForDesignation } from "../../constants/designationProfiles.ts";
 import firebaseConfig from "../../../firebase-applet-config.json" assert { type: "json" };
 
 const API_KEY = firebaseConfig.apiKey;
@@ -184,11 +185,37 @@ export class UserService {
     }
 
     const baseRole = mapFunctionalToBaseRole(role);
+    const desigName = userData.designation || "";
+    const defaultProfileInfo = getDefaultPermissionsForDesignation(desigName);
+    
+    // Determine effective permissions & source
+    let effectivePermissions: string[] = userData.permissions;
+    let permissionSource: 'DESIGNATION_DEFAULT' | 'USER_OVERRIDE' = 'DESIGNATION_DEFAULT';
+
+    if (!effectivePermissions || effectivePermissions.length === 0) {
+      effectivePermissions = defaultProfileInfo.permissions;
+      permissionSource = 'DESIGNATION_DEFAULT';
+    } else {
+      // Check if matches default profile exactly
+      const sortedDefault = [...defaultProfileInfo.permissions].sort().join(',');
+      const sortedUser = [...effectivePermissions].sort().join(',');
+      if (sortedDefault !== sortedUser) {
+        permissionSource = 'USER_OVERRIDE';
+      }
+    }
+
     const newUser: any = {
       uid,
       employeeId: userData.employeeId,
       displayName: name,
-      designation: userData.designation || "",
+      designation: desigName,
+      designationName: desigName,
+      designationId: userData.designationId || "",
+      designationPermissionProfileId: defaultProfileInfo.profile?.profileId || "custom",
+      designationPermissionProfileVersion: defaultProfileInfo.profile?.version || "1.0",
+      permissionSource,
+      permissionOverrides: userData.permissionOverrides || {},
+      permissionOverrideReason: userData.permissionOverrideReason || "",
       department: userData.department,
       email,
       mobileNumber: userData.mobileNumber || "",
@@ -201,7 +228,7 @@ export class UserService {
       
       role: baseRole,
       functionalRole: role,
-      permissions: userData.permissions || [],
+      permissions: effectivePermissions,
       
       defaultBranch: userData.defaultBranch,
       allowedBranches: userData.allowedBranches || [],
@@ -241,18 +268,46 @@ export class UserService {
       await AuditService.logAction(
         adminUser.uid,
         adminUser.email,
-        "CREATE_USER",
+        "USER_CREATED",
         uid,
         "USER",
         null,
         newUser,
-        undefined,
+        `User ${email} created with designation '${desigName}' and role '${baseRole}'`,
         undefined,
         undefined,
         undefined,
         metadata?.ip,
         metadata?.userAgent
       );
+
+      // Audit Designation Assignment
+      if (desigName) {
+        await AuditService.logAction(
+          adminUser.uid,
+          adminUser.email,
+          "DESIGNATION_ASSIGNED",
+          uid,
+          "USER",
+          null,
+          {
+            employeeId: userData.employeeId,
+            designation: desigName,
+            department: userData.department,
+            branch: userData.defaultBranch,
+            permissionProfile: defaultProfileInfo.profile?.profileId || "custom",
+            profileVersion: defaultProfileInfo.profile?.version || "1.0",
+            permissionsAssignedCount: effectivePermissions.length,
+            permissionSource
+          },
+          `Designation '${desigName}' assigned to user ${email} with ${effectivePermissions.length} permissions (${permissionSource})`,
+          undefined,
+          undefined,
+          undefined,
+          metadata?.ip,
+          metadata?.userAgent
+        );
+      }
     } catch (auditError) {
       console.error("[USER_SERVICE] Audit logging failed (non-blocking):", auditError);
     }
@@ -418,18 +473,56 @@ export class UserService {
     await AuditService.logAction(
       adminUser.uid,
       adminUser.email,
-      "UPDATE_USER",
+      "USER_UPDATED",
       id,
       "USER",
       oldValue,
       updatedValue,
-      otherData.changeReason || undefined,
+      otherData.changeReason || `User ${oldValue.email} updated`,
       undefined,
       undefined,
       undefined,
       metadata?.ip,
       metadata?.userAgent
     );
+
+    // If designation changed, log DESIGNATION_CHANGED
+    if (otherData.designation && otherData.designation !== oldValue.designation) {
+      await AuditService.logAction(
+        adminUser.uid,
+        adminUser.email,
+        "DESIGNATION_CHANGED",
+        id,
+        "USER",
+        { designation: oldValue.designation, permissions: oldValue.permissions, permissionSource: oldValue.permissionSource },
+        { designation: otherData.designation, permissions: updatedValue.permissions, permissionSource: updatedValue.permissionSource },
+        `User ${oldValue.email} designation changed from '${oldValue.designation}' to '${otherData.designation}'`,
+        undefined,
+        undefined,
+        undefined,
+        metadata?.ip,
+        metadata?.userAgent
+      );
+    }
+
+    // If permission source is override or permissions changed
+    if (otherData.permissionSource === 'USER_OVERRIDE' && otherData.permissionOverrideReason) {
+      await AuditService.logAction(
+        adminUser.uid,
+        adminUser.email,
+        "USER_PERMISSION_OVERRIDE_CHANGED",
+        id,
+        "USER",
+        { permissions: oldValue.permissions, permissionSource: oldValue.permissionSource },
+        { permissions: updatedValue.permissions, permissionSource: updatedValue.permissionSource, reason: otherData.permissionOverrideReason },
+        `Individual permission override applied for user ${oldValue.email}. Reason: ${otherData.permissionOverrideReason}`,
+        undefined,
+        undefined,
+        undefined,
+        metadata?.ip,
+        metadata?.userAgent
+      );
+    }
 
     return { id, ...updatedValue };
   }

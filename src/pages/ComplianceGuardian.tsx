@@ -418,8 +418,8 @@ export default function ComplianceGuardian() {
                     <TrendingUp className="w-4 h-4 text-emerald-500" />
                     7-Month Compliance & CAPA Resolution Trend
                   </h3>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-64 w-full min-w-0 min-h-[256px] relative">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256} debounce={50}>
                       <AreaChart data={trendData}>
                         <defs>
                           <linearGradient id="colorCompliance" x1="0" y1="0" x2="0" y2="1">
@@ -444,7 +444,7 @@ export default function ComplianceGuardian() {
                   <Building2 className="w-4 h-4 text-blue-500" />
                   Multi-Branch Plant Compliance Comparison
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {scorecard?.branchComparison.map(b => (
                     <div key={b.branchName} className="p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
                       <div className="flex items-center justify-between">

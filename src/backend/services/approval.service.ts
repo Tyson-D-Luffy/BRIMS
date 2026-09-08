@@ -71,6 +71,115 @@ export class ApprovalService {
     });
   }
 
+  static async reviewRecord(recordId: string, comments: string, user: any, signatureInfo?: any) {
+    await ensureAuth();
+    const recordRef = doc(db, "batch_sheet_records", recordId);
+
+    return await runTransaction(db, async (transaction) => {
+      const recordDoc = await transaction.get(recordRef);
+
+      if (!recordDoc.exists()) {
+        throw new Error("Batch Sheet Record not found");
+      }
+
+      const recordData = recordDoc.data() as BatchSheetRecord;
+      const masterId = recordData.masterId;
+
+      if (!masterId) {
+        throw new Error("Missing masterId association on record");
+      }
+
+      if (recordData.status !== 'UNDER_REVIEW') {
+        throw new Error(`Only records in UNDER_REVIEW status can be reviewed. Current status: ${recordData.status}`);
+      }
+
+      // 21 CFR Part 11 Duty Segregation
+      if (recordData.createdBy === user.uid && user.role !== "ADMIN") {
+        throw new Error("Compliance Duty Segregation (21 CFR Part 11): The author cannot perform the Review step.");
+      }
+
+      const masterRef = doc(db, "batch_sheet_masters", masterId);
+      const masterDoc = await transaction.get(masterRef);
+      if (!masterDoc.exists()) {
+        throw new Error("Batch Sheet Master not found");
+      }
+
+      const reviewerName = user.displayName || user.username || user.email?.split('@')[0] || user.email || 'QA Reviewer';
+      const reviewTimestamp = new Date().toISOString();
+      const reviewCommentsVal = comments || "Reviewed and recommended for approval";
+
+      const updateData = {
+        status: 'PENDING_APPROVAL' as RecordStatus,
+        reviewedBy: user.uid,
+        reviewedByEmail: user.email || '',
+        reviewedByName: reviewerName,
+        reviewedAt: reviewTimestamp,
+        reviewComments: reviewCommentsVal,
+        updatedAt: reviewTimestamp,
+      };
+
+      transaction.update(recordRef, updateData);
+
+      // Create Approval Record with REVIEWED status
+      const approvalRef = doc(collection(db, "approvals"));
+      const approvalRecord: any = {
+        recordId,
+        status: 'REVIEWED',
+        comments: reviewCommentsVal,
+        actionBy: user.uid,
+        actionAt: reviewTimestamp,
+        signatureRequired: true,
+        createdAt: reviewTimestamp,
+      };
+      transaction.set(approvalRef, approvalRecord);
+
+      // Update master to PENDING_APPROVAL
+      transaction.update(masterRef, {
+        status: 'PENDING_APPROVAL' as MasterStatus,
+        reviewedBy: user.uid,
+        reviewedByEmail: user.email || '',
+        reviewedByName: reviewerName,
+        reviewedAt: reviewTimestamp,
+        reviewComments: reviewCommentsVal,
+        updatedAt: reviewTimestamp,
+      });
+
+      let signatureId: string | undefined;
+      if (signatureInfo) {
+        const sigResult = await SignatureService.signAction(
+          user.uid,
+          user.email,
+          "REVIEW",
+          "BATCH_SHEET_RECORD",
+          recordId,
+          signatureInfo.meaning || "I have reviewed this record and recommend it for approval",
+          signatureInfo.ipAddress,
+          signatureInfo.userAgent,
+          transaction
+        );
+        signatureId = sigResult.id;
+      }
+
+      await AuditService.logAction(
+        user.uid,
+        user.email,
+        "REVIEW_BATCH_SHEET_RECORD",
+        recordId,
+        "BATCH_SHEET_RECORD",
+        { status: 'UNDER_REVIEW' },
+        updateData,
+        reviewCommentsVal,
+        transaction,
+        signatureId,
+        signatureInfo?.meaning || "I have reviewed this record and recommend it for approval",
+        signatureInfo?.ipAddress,
+        signatureInfo?.userAgent
+      );
+
+      return { id: recordId, ...updateData };
+    });
+  }
+
   static async approveRecord(recordId: string, comments: string, user: any, signatureInfo?: any) {
     await ensureAuth();
     const recordRef = doc(db, "batch_sheet_records", recordId);
@@ -104,8 +213,13 @@ export class ApprovalService {
 
       const recordData = recordDoc.data() as BatchSheetRecord;
 
-      if (recordData.status !== 'UNDER_REVIEW') {
-        throw new Error(`Only records in UNDER_REVIEW status can be approved. Current status: ${recordData.status}`);
+      if (recordData.status !== 'PENDING_APPROVAL' && recordData.status !== 'UNDER_REVIEW') {
+        throw new Error(`Only records in PENDING_APPROVAL status can be approved. Current status: ${recordData.status}`);
+      }
+
+      // Segregation of Duties: Creator cannot approve their own record
+      if (recordData.createdBy === user.uid && user.role !== "ADMIN") {
+        throw new Error("Compliance Duty Segregation (21 CFR Part 11): The author cannot perform the Approval step.");
       }
 
       // Read master document before any writes
@@ -122,18 +236,22 @@ export class ApprovalService {
           status: 'ARCHIVED',
           updatedAt: new Date().toISOString()
         });
-
-        // Non-blocking audit for archives can happen after transaction or we do it simply here
-        // But for transaction atomicity we only update the status
       }
+
+      const approverName = user.displayName || user.username || user.email?.split('@')[0] || user.email || 'QA Approver';
+      const approveTimestamp = new Date().toISOString();
+      const approvalCommentsVal = comments || "Approved for production";
 
       // 2. Approve the new record
       const approvalData = {
         status: 'APPROVED' as RecordStatus,
         approvedBy: user.uid,
-        approvedAt: new Date().toISOString(),
+        approvedByEmail: user.email || '',
+        approvedByName: approverName,
+        approvedAt: approveTimestamp,
+        approvalComments: approvalCommentsVal,
         isLocked: true,
-        updatedAt: new Date().toISOString(),
+        updatedAt: approveTimestamp,
       };
 
       transaction.update(recordRef, approvalData);
@@ -143,11 +261,11 @@ export class ApprovalService {
       const approvalRecord: Omit<Approval, 'id'> = {
         recordId,
         status: 'APPROVED',
-        comments: comments || "Approved",
+        comments: approvalCommentsVal,
         actionBy: user.uid,
-        actionAt: new Date().toISOString(),
+        actionAt: approveTimestamp,
         signatureRequired: true,
-        createdAt: new Date().toISOString(),
+        createdAt: approveTimestamp,
       };
       transaction.set(approvalRef, approvalRecord);
 
@@ -164,10 +282,15 @@ export class ApprovalService {
       }
 
       transaction.update(masterRef, {
-        status: 'APPROVED',
+        status: 'APPROVED' as MasterStatus,
         isLocked: true,
         version: nextVerStr,
-        updatedAt: new Date().toISOString()
+        approvedBy: user.uid,
+        approvedByEmail: user.email || '',
+        approvedByName: approverName,
+        approvedAt: approveTimestamp,
+        approvalComments: approvalCommentsVal,
+        updatedAt: approveTimestamp
       });
 
       // Update approved record's snapshot version to match
@@ -183,7 +306,7 @@ export class ApprovalService {
           "APPROVE",
           "BATCH_SHEET_RECORD",
           recordId,
-          signatureInfo.meaning,
+          signatureInfo.meaning || "I have reviewed this record and I approve it for production",
           signatureInfo.ipAddress,
           signatureInfo.userAgent,
           transaction
@@ -197,12 +320,12 @@ export class ApprovalService {
         "APPROVE_BATCH_SHEET_RECORD",
         recordId,
         "BATCH_SHEET_RECORD",
-        { status: 'UNDER_REVIEW' },
+        { status: recordData.status },
         approvalData,
-        comments,
+        approvalCommentsVal,
         transaction,
         signatureId,
-        signatureInfo?.meaning,
+        signatureInfo?.meaning || "I have reviewed this record and I approve it for production",
         signatureInfo?.ipAddress,
         signatureInfo?.userAgent
       );
@@ -231,8 +354,8 @@ export class ApprovalService {
         throw new Error("Batch Sheet Record is not associated with a Master ID");
       }
 
-      if (recordData.status !== 'UNDER_REVIEW') {
-        throw new Error(`Only records in UNDER_REVIEW status can be rejected. Current status: ${recordData.status}`);
+      if (recordData.status !== 'UNDER_REVIEW' && recordData.status !== 'PENDING_APPROVAL') {
+        throw new Error(`Only records in UNDER_REVIEW or PENDING_APPROVAL status can be rejected. Current status: ${recordData.status}`);
       }
 
       const updateData = {
@@ -284,7 +407,7 @@ export class ApprovalService {
         "REJECT_BATCH_SHEET_RECORD",
         recordId,
         "BATCH_SHEET_RECORD",
-        { status: 'UNDER_REVIEW' },
+        { status: recordData.status },
         updateData,
         comments,
         transaction,
@@ -325,8 +448,8 @@ export class ApprovalService {
         throw new Error("Batch Sheet Record is not associated with a Master ID");
       }
 
-      if (recordData.status !== 'UNDER_REVIEW') {
-        throw new Error(`Only records in UNDER_REVIEW status can be returned. Current status: ${recordData.status}`);
+      if (recordData.status !== 'UNDER_REVIEW' && recordData.status !== 'PENDING_APPROVAL') {
+        throw new Error(`Only records in UNDER_REVIEW or PENDING_APPROVAL status can be returned. Current status: ${recordData.status}`);
       }
 
       const returnCount = (recordData.returnCount || 0) + 1;
@@ -338,18 +461,20 @@ export class ApprovalService {
         returnedByEmail: user?.email || '',
         returnedByName: user?.displayName || user?.email || 'QA Personnel',
         returnedByRole: user?.role || 'QA',
-        fromStep: 'UNDER_REVIEW',
+        fromStep: recordData.status,
         toStep: returnToStep,
         reason: returnReason.trim(),
         comments: comments?.trim() || '',
       };
 
+      const targetStatus: RecordStatus = returnToStep === 'UNDER_REVIEW' ? 'UNDER_REVIEW' : 'RETURNED';
+
       const updateData = {
-        status: 'RETURNED' as RecordStatus,
+        status: targetStatus,
         returnedBy: user?.uid,
         returnedByEmail: user?.email,
         returnedAt: new Date().toISOString(),
-        returnedFrom: 'UNDER_REVIEW',
+        returnedFrom: recordData.status,
         returnedTo: returnToStep,
         returnReason: returnReason.trim(),
         returnComments: comments?.trim() || '',
@@ -360,10 +485,19 @@ export class ApprovalService {
 
       transaction.update(recordRef, updateData);
 
-      // Update master status to RETURNED
+      // Update master status
       const masterRef = doc(db, "batch_sheet_masters", recordData.masterId);
       transaction.update(masterRef, {
-        status: 'RETURNED' as MasterStatus,
+        status: (targetStatus === 'UNDER_REVIEW' ? 'UNDER_REVIEW' : 'RETURNED') as MasterStatus,
+        returnedBy: user?.uid,
+        returnedByEmail: user?.email,
+        returnedAt: new Date().toISOString(),
+        returnedFrom: recordData.status,
+        returnedTo: returnToStep,
+        returnReason: returnReason.trim(),
+        returnComments: comments?.trim() || '',
+        returnCount,
+        returnHistory: [...history, newHistoryEntry],
         updatedAt: new Date().toISOString()
       });
 
@@ -402,7 +536,7 @@ export class ApprovalService {
         "RETURN_BATCH_SHEET_RECORD",
         recordId,
         "BATCH_SHEET_RECORD",
-        { status: 'UNDER_REVIEW' },
+        { status: recordData.status },
         updateData,
         `Returned for Correction: ${returnReason}`,
         transaction,
@@ -493,12 +627,17 @@ export class ApprovalService {
 
   static async getPendingApprovals(selectedBranch?: string) {
     await ensureAuth();
-    let q = query(collection(db, "batch_sheet_records"), where("status", "==", "UNDER_REVIEW"));
+    let qReview = query(collection(db, "batch_sheet_records"), where("status", "==", "UNDER_REVIEW"));
+    let qApprove = query(collection(db, "batch_sheet_records"), where("status", "==", "PENDING_APPROVAL"));
     if (selectedBranch) {
-      q = query(q, where("branch", "==", selectedBranch));
+      qReview = query(qReview, where("branch", "==", selectedBranch));
+      qApprove = query(qApprove, where("branch", "==", selectedBranch));
     }
-    const snapshot = await getDocs(q);
-    const docs = snapshot.docs.map((doc: any) => ({ id: doc.id, ...(doc.data() as any) }));
+    const [snapReview, snapApprove] = await Promise.all([getDocs(qReview), getDocs(qApprove)]);
+    const docs = [
+      ...snapReview.docs.map((doc: any) => ({ id: doc.id, ...(doc.data() as any) })),
+      ...snapApprove.docs.map((doc: any) => ({ id: doc.id, ...(doc.data() as any) }))
+    ];
 
     // Sort by createdAt asc in-memory
     docs.sort((a: any, b: any) => {
@@ -538,8 +677,11 @@ export class ApprovalService {
     // Filter for workflow-relevant actions
     const workflowActions = [
       "SUBMIT_FOR_APPROVAL",
+      "REVIEW_BATCH_SHEET_RECORD",
       "APPROVE_BATCH_SHEET_RECORD",
       "REJECT_BATCH_SHEET_RECORD",
+      "RETURN_BATCH_SHEET_RECORD",
+      "RESUBMIT_BATCH_SHEET_RECORD",
       "BATCH_SHEET_RECORD_ARCHIVED",
       "BATCH_SHEET_RECORD_SUPERSEDED"
     ];

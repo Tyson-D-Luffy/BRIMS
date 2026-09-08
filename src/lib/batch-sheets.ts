@@ -32,12 +32,126 @@ export function expandBatchSeries(series: string): string[] {
 }
 
 /**
+ * Computes human-readable custody location conforming to 21 CFR Part 11 integrity rules
+ */
+export function computeSheetCustody(sheet: BatchSheetItem, batchStatus?: string): string {
+  if (sheet.currentCustody) return sheet.currentCustody;
+
+  if (sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED') {
+    return 'QA – Reviewed';
+  }
+  if (sheet.qaReceiptStatus === 'RECEIVED_BY_QA') {
+    return 'QA – Under Review';
+  }
+  if (sheet.qaReturnStatus === 'SENT_FOR_QA_REVIEW') {
+    return 'QA – Awaiting Receipt';
+  }
+  if (sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') {
+    return 'Production';
+  }
+  if (sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION') {
+    return 'QA – Handed Over / Awaiting Production Receipt';
+  }
+  const isPrinted = sheet.status === 'PRINT_COMPLETED' || sheet.status === 'PRINTED' || sheet.status === 'REPRINTED' || (sheet.printCount || 0) > 0;
+  if (isPrinted) {
+    return 'QA – Printed / Pending Handover';
+  }
+  return 'QA – Awaiting Printing';
+}
+
+/**
+ * Normalizes an individual batch sheet item to ensure all custody and operational fields exist.
+ */
+export function normalizeBatchSheetItem(sheet: BatchSheetItem, batchStatus: string = 'ISSUED'): BatchSheetItem {
+  const isPrinted = sheet.status === 'PRINT_COMPLETED' || sheet.status === 'PRINTED' || sheet.status === 'REPRINTED' || (sheet.printCount || 0) > 0;
+
+  let handoverStatus = sheet.handoverStatus;
+  let productionReceiptStatus = sheet.productionReceiptStatus;
+  let productionStatus = sheet.productionStatus;
+  let qaReturnStatus = sheet.qaReturnStatus;
+  let qaReceiptStatus = sheet.qaReceiptStatus;
+  let qaReviewStatus = sheet.qaReviewStatus;
+
+  if (!handoverStatus) {
+    if (['HANDED_OVER', 'PRODUCTION_IN_PROGRESS', 'READY_FOR_QA_REVIEW', 'COMPLETED'].includes(batchStatus)) {
+      handoverStatus = 'HANDED_OVER_TO_PRODUCTION';
+    } else {
+      handoverStatus = 'PENDING_HANDOVER';
+    }
+  }
+
+  if (!productionReceiptStatus) {
+    if (['PRODUCTION_IN_PROGRESS', 'READY_FOR_QA_REVIEW', 'COMPLETED'].includes(batchStatus)) {
+      productionReceiptStatus = 'RECEIVED_BY_PRODUCTION';
+    } else if (handoverStatus === 'HANDED_OVER_TO_PRODUCTION') {
+      productionReceiptStatus = 'AWAITING_PRODUCTION_RECEIPT';
+    } else {
+      productionReceiptStatus = 'NOT_AVAILABLE';
+    }
+  }
+
+  if (!productionStatus) {
+    if (['COMPLETED'].includes(batchStatus)) {
+      productionStatus = 'COMPLETED';
+    } else if (['READY_FOR_QA_REVIEW'].includes(batchStatus)) {
+      productionStatus = 'READY_FOR_QA_REVIEW';
+    } else if (['PRODUCTION_IN_PROGRESS'].includes(batchStatus)) {
+      productionStatus = 'IN_PROGRESS';
+    } else {
+      productionStatus = 'PENDING';
+    }
+  }
+
+  if (!qaReturnStatus) {
+    if (['READY_FOR_QA_REVIEW', 'COMPLETED'].includes(batchStatus)) {
+      qaReturnStatus = 'SENT_FOR_QA_REVIEW';
+    } else {
+      qaReturnStatus = 'NOT_SENT';
+    }
+  }
+
+  if (!qaReceiptStatus) {
+    if (['COMPLETED'].includes(batchStatus)) {
+      qaReceiptStatus = 'RECEIVED_BY_QA';
+    } else if (['READY_FOR_QA_REVIEW'].includes(batchStatus)) {
+      qaReceiptStatus = 'RECEIVED_BY_QA';
+    } else {
+      qaReceiptStatus = 'NOT_AVAILABLE';
+    }
+  }
+
+  if (!qaReviewStatus) {
+    if (['COMPLETED'].includes(batchStatus)) {
+      qaReviewStatus = 'QA_REVIEW_COMPLETED';
+    } else if (qaReceiptStatus === 'RECEIVED_BY_QA') {
+      qaReviewStatus = 'RECEIVED';
+    } else {
+      qaReviewStatus = 'PENDING_RECEIPT';
+    }
+  }
+
+  const normalized: BatchSheetItem = {
+    ...sheet,
+    handoverStatus,
+    productionReceiptStatus,
+    productionStatus,
+    qaReturnStatus,
+    qaReceiptStatus,
+    qaReviewStatus,
+    history: sheet.history || []
+  };
+
+  normalized.currentCustody = computeSheetCustody(normalized, batchStatus);
+  return normalized;
+}
+
+/**
  * Ensures that a BatchIssuance object always has an array of BatchSheetItems,
  * populating it client-side if it was not provided by the backend response.
  */
 export function initializeBatchSheetsClient(batchData: BatchIssuance): BatchSheetItem[] {
   if (Array.isArray(batchData.batchSheets) && batchData.batchSheets.length > 0) {
-    return batchData.batchSheets;
+    return batchData.batchSheets.map(s => normalizeBatchSheetItem(s, batchData.status));
   }
 
   const rawSeries = batchData.batchNumberSeries || batchData.batchNumber || '';
@@ -64,7 +178,7 @@ export function initializeBatchSheetsClient(batchData: BatchIssuance): BatchShee
       initialStatus = 'PENDING';
     }
 
-    return {
+    const item: BatchSheetItem = {
       id: `sheet-${idx}`,
       batchNumber: num,
       sequenceIndex: idx,
@@ -97,7 +211,45 @@ export function initializeBatchSheetsClient(batchData: BatchIssuance): BatchShee
       ] : [],
       printJobs: []
     };
+
+    return normalizeBatchSheetItem(item, batchData.status);
   });
+}
+
+export function computeHandoverProgress(sheets: BatchSheetItem[]) {
+  const total = sheets.length;
+  const handedOverCount = sheets.filter(s => s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION').length;
+  const productionReceivedCount = sheets.filter(s => s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION').length;
+  const pendingHandoverCount = sheets.filter(s => s.handoverStatus !== 'HANDED_OVER_TO_PRODUCTION').length;
+  const awaitingProductionReceiptCount = sheets.filter(s => s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' && s.productionReceiptStatus !== 'RECEIVED_BY_PRODUCTION').length;
+  const percent = total > 0 ? Math.round((handedOverCount / total) * 100) : 0;
+
+  return {
+    total,
+    handedOverCount,
+    productionReceivedCount,
+    pendingHandoverCount,
+    awaitingProductionReceiptCount,
+    percent
+  };
+}
+
+export function computeQaReviewProgress(sheets: BatchSheetItem[]) {
+  const total = sheets.length;
+  const sentForReviewCount = sheets.filter(s => s.qaReturnStatus === 'SENT_FOR_QA_REVIEW').length;
+  const qaReceivedCount = sheets.filter(s => s.qaReceiptStatus === 'RECEIVED_BY_QA').length;
+  const reviewedCount = sheets.filter(s => s.qaReviewStatus === 'QA_REVIEW_COMPLETED').length;
+  const stillInProductionCount = sheets.filter(s => s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW').length;
+  const percent = total > 0 ? Math.round((reviewedCount / total) * 100) : 0;
+
+  return {
+    total,
+    sentForReviewCount,
+    qaReceivedCount,
+    reviewedCount,
+    stillInProductionCount,
+    percent
+  };
 }
 
 export interface SheetEligibilityResult {

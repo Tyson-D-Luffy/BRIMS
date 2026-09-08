@@ -32,6 +32,7 @@ import api from '../services/api';
 import { BatchIssuance, ProductMaster } from '../types';
 import { toast } from 'sonner';
 import { LoadingPage } from '../components/LoadingSpinner';
+import { HighlightText } from '../components/HighlightText';
 
 export default function RejectedBatchSheetRequests() {
   const navigate = useNavigate();
@@ -119,11 +120,20 @@ export default function RejectedBatchSheetRequests() {
   };
 
   const filteredRequests = rejectedRequests.filter(req => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
     const product = products.find(p => p.id === req.productId);
+    const stage = req.recordInfo?.masterSnapshot?.stage || product?.stage || '';
+    const procType = req.recordInfo?.masterSnapshot?.type || product?.type || '';
     const matchesSearch = 
-      req.batchNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      req.rejectionReason?.toLowerCase().includes(searchQuery.toLowerCase());
+      (req.batchNumber || '').toLowerCase().includes(q) ||
+      (req.dropdownBatchSeries || '').toLowerCase().includes(q) ||
+      (req.batchNumberSeries || '').toLowerCase().includes(q) ||
+      (req.id || '').toLowerCase().includes(q) ||
+      (stage || '').toLowerCase().includes(q) ||
+      (procType || '').toLowerCase().includes(q) ||
+      (product?.title || '').toLowerCase().includes(q) ||
+      (req.rejectionReason || '').toLowerCase().includes(q);
     return matchesSearch;
   });
 
@@ -325,21 +335,21 @@ export default function RejectedBatchSheetRequests() {
                         </div>
                         <div>
                           <p className="font-black text-rose-600 hover:underline leading-tight uppercase cursor-pointer" onClick={() => navigate(`/batches/${iss.id}`)}>
-                            {batchDetailLabel}
+                            <HighlightText text={batchDetailLabel} search={searchQuery} />
                           </p>
                           <p className="text-[11px] text-slate-400 font-bold block mt-1 tracking-wider">
-                            ID: {iss.id.substring(0, 8)} | REQUEST TYPE: {iss.requestType || 'NEW'}
+                            ID: <HighlightText text={iss.id.substring(0, 8)} search={searchQuery} /> | REQUEST TYPE: {iss.requestType || 'NEW'}
                           </p>
                           {(iss.dropdownBatchSeries || iss.batchNumberSeries) && (
                             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                               {iss.dropdownBatchSeries && (
                                 <Badge variant="outline" className="bg-indigo-50/50 text-indigo-700 border-indigo-100 text-[10px] font-bold py-0 h-5">
-                                  Series: {iss.dropdownBatchSeries}
+                                  Series: <HighlightText text={iss.dropdownBatchSeries} search={searchQuery} />
                                 </Badge>
                               )}
                               {iss.batchNumberSeries && (
                                 <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 text-[10px] font-bold py-0 h-5">
-                                  Sheets: {iss.batchNumberSeries}
+                                  Sheets: <HighlightText text={iss.batchNumberSeries} search={searchQuery} />
                                 </Badge>
                               )}
                             </div>
@@ -353,10 +363,10 @@ export default function RejectedBatchSheetRequests() {
                       <div className="space-y-1">
                         <div className="flex items-center gap-1.5 text-xs text-slate-700 font-extrabold font-mono tracking-tight bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100 w-fit">
                           <Layers className="w-3.5 h-3.5 text-rose-500" />
-                          <span>{iss.recordInfo?.masterSnapshot?.stage || product?.stage || 'N/A'}</span>
+                          <span><HighlightText text={iss.recordInfo?.masterSnapshot?.stage || product?.stage || 'N/A'} search={searchQuery} /></span>
                         </div>
                         <div className="text-[11px] text-slate-400 font-bold block pl-1">
-                          Process: {iss.recordInfo?.masterSnapshot?.type || product?.type || 'N/A'}
+                          Process: <HighlightText text={iss.recordInfo?.masterSnapshot?.type || product?.type || 'N/A'} search={searchQuery} />
                         </div>
                       </div>
                     </TableCell>
@@ -364,7 +374,7 @@ export default function RejectedBatchSheetRequests() {
                     {/* Rejection Reason */}
                     <TableCell className="py-8 max-w-[240px]">
                       <div className="text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-2.5 line-clamp-2" title={iss.rejectionReason || 'No details provided'}>
-                        {iss.rejectionReason || 'No details provided'}
+                        <HighlightText text={iss.rejectionReason || 'No details provided'} search={searchQuery} />
                       </div>
                     </TableCell>
 

@@ -38,6 +38,7 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { HighlightText } from '../components/HighlightText';
 
 // Standard Suggested Departments
 const SUGGESTED_DEPARTMENTS = [
@@ -756,11 +757,12 @@ export default function DepartmentMasters() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedDepartments.map((dept) => {
+                    {paginatedDepartments.map((dept, idx) => {
                       const isSelected = selectedDept?.departmentId === dept.departmentId;
+                      const deptRowKey = dept.departmentId || dept.id || `dept-row-${idx}`;
                       return (
                         <TableRow 
-                          key={dept.departmentId}
+                          key={`dept-row-${deptRowKey}-v${dept.version || 1}-${idx}`}
                           onClick={() => handleSelectDept(dept)}
                           className={`cursor-pointer transition-colors ${
                             isSelected ? 'bg-orange-50/20 hover:bg-orange-50/30' : 'hover:bg-slate-50/50'
@@ -768,14 +770,18 @@ export default function DepartmentMasters() {
                         >
                           <TableCell className="py-3.5">
                             <span className="text-xs font-mono font-black text-slate-900 bg-slate-100 px-2 py-0.5 rounded uppercase">
-                              {dept.departmentCode}
+                              <HighlightText text={dept.departmentCode} search={searchCode} />
                             </span>
                           </TableCell>
                           
                           <TableCell>
                             <div>
-                              <p className="text-xs font-bold text-slate-800 leading-tight">{dept.departmentName}</p>
-                              <p className="text-[10px] text-slate-400 max-w-[200px] truncate leading-normal">{dept.description}</p>
+                              <p className="text-xs font-bold text-slate-800 leading-tight">
+                                <HighlightText text={dept.departmentName} search={searchName} />
+                              </p>
+                              <p className="text-[10px] text-slate-400 max-w-[200px] truncate leading-normal">
+                                <HighlightText text={dept.description} search={searchName} />
+                              </p>
                             </div>
                           </TableCell>
 

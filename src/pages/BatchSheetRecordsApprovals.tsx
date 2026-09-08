@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/table';
 import { LoadingPage } from '../components/LoadingSpinner';
 import { cn } from '../lib/utils';
+import { HighlightText } from '../components/HighlightText';
 
 export default function BatchSheetRecordsApprovals() {
   const navigate = useNavigate();
@@ -83,10 +84,17 @@ export default function BatchSheetRecordsApprovals() {
     return uidOrStr;
   };
 
-  const filteredApprovals = pendingApprovals.filter(approval => 
-    approval.masterSnapshot?.masterName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    approval.masterSnapshot?.documentNumber?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredApprovals = pendingApprovals.filter(approval => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      (approval.masterSnapshot?.masterName || '').toLowerCase().includes(q) ||
+      (approval.masterSnapshot?.documentNumber || '').toLowerCase().includes(q) ||
+      (approval.masterSnapshot?.product?.title || '').toLowerCase().includes(q) ||
+      getUserDisplay(approval.createdBy).toLowerCase().includes(q) ||
+      (approval.status || '').toLowerCase().replace(/_/g, ' ').includes(q)
+    );
+  });
 
   if (loading) return <LoadingPage label="Scanning for pending approvals..." />;
 
@@ -165,10 +173,10 @@ export default function BatchSheetRecordsApprovals() {
                       </div>
                       <div>
                         <p className="font-black text-slate-900 text-lg leading-tight uppercase tracking-tight">
-                          {approval.masterSnapshot?.masterName}
+                          <HighlightText text={approval.masterSnapshot?.masterName} search={searchQuery} />
                         </p>
                         <p className="text-xs font-mono text-slate-400 mt-1">
-                          {approval.masterSnapshot?.documentNumber}
+                          <HighlightText text={approval.masterSnapshot?.documentNumber} search={searchQuery} />
                         </p>
                       </div>
                     </div>
@@ -183,20 +191,31 @@ export default function BatchSheetRecordsApprovals() {
                   <TableCell>
                     <div className="flex items-center gap-2">
                         <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                        <span className="font-bold text-slate-700">{approval.masterSnapshot?.product?.title || 'Unknown Product'}</span>
+                        <span className="font-bold text-slate-700">
+                          <HighlightText text={approval.masterSnapshot?.product?.title || 'Unknown Product'} search={searchQuery} />
+                        </span>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="space-y-1">
-                        <p className="text-sm font-bold text-slate-900">{getUserDisplay(approval.createdBy)}</p>
+                        <p className="text-sm font-bold text-slate-900">
+                          <HighlightText text={getUserDisplay(approval.createdBy)} search={searchQuery} />
+                        </p>
                         <p className="text-xs text-slate-400">{new Date(approval.createdAt).toLocaleDateString()}</p>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge className="bg-amber-100 text-amber-600 border-amber-200 rounded-full px-3 py-1 font-bold text-[10px] uppercase tracking-wider">
+                    {approval.status === 'PENDING_APPROVAL' ? (
+                      <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 rounded-full px-3 py-1 font-bold text-[10px] uppercase tracking-wider">
+                        <ShieldCheck className="w-3 h-3 mr-1" />
+                        Pending Approval
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-amber-100 text-amber-600 border-amber-200 rounded-full px-3 py-1 font-bold text-[10px] uppercase tracking-wider">
                         <Clock className="w-3 h-3 mr-1" />
                         Under Review
-                    </Badge>
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="pr-10 text-right">
                     <Button 

@@ -37,6 +37,7 @@ import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { HighlightText } from '../components/HighlightText';
 
 export default function DesignationMasters() {
   const { user } = useAuth();
@@ -179,7 +180,11 @@ export default function DesignationMasters() {
 
   // Filter application
   const filteredDesignations = designations.filter((d: any) => {
-    const matchName = d.designationName?.toLowerCase().includes(searchName.trim().toLowerCase());
+    const sTerm = searchName.trim().toLowerCase();
+    const matchName = !sTerm || 
+      d.designationName?.toLowerCase().includes(sTerm) ||
+      d.departmentName?.toLowerCase().includes(sTerm) ||
+      d.description?.toLowerCase().includes(sTerm);
     const matchDept = searchDeptId === "ALL" || d.departmentId === searchDeptId;
     const matchStatus = searchStatus === "ALL" || d.status === searchStatus;
     return matchName && matchDept && matchStatus;
@@ -361,13 +366,13 @@ export default function DesignationMasters() {
   };
 
   // Get active designations count per department
-  const deptsSummary = departments.map((dept: any) => {
-    const deptUniqueId = dept.departmentId || dept.id;
-    const matchActiveCount = designations.filter((d: any) => d.departmentId === deptUniqueId && d.status === "Active").length;
+  const deptsSummary = departments.map((dept: any, idx: number) => {
+    const deptUniqueId = dept.departmentId || dept.id || `dept-sum-${idx}`;
+    const matchActiveCount = designations.filter((d: any) => (d.departmentId === deptUniqueId || d.departmentId === dept.departmentId || d.departmentId === dept.id) && d.status === "Active").length;
     return {
       id: deptUniqueId,
-      code: dept.departmentCode,
-      name: dept.departmentName,
+      code: dept.departmentCode || 'N/A',
+      name: dept.departmentName || 'Unnamed Department',
       activeCount: matchActiveCount
     };
   });
@@ -587,8 +592,8 @@ export default function DesignationMasters() {
                       <TableCell colSpan={2} className="text-center text-xs text-slate-400 py-4">No active departments found</TableCell>
                     </TableRow>
                   ) : (
-                    deptsSummary.map((deptSummary: any) => (
-                      <TableRow key={deptSummary.id} className="hover:bg-slate-50/50 transition-colors">
+                    deptsSummary.map((deptSummary: any, idx: number) => (
+                      <TableRow key={`dept-summary-row-${deptSummary.id || idx}-${idx}`} className="hover:bg-slate-50/50 transition-colors">
                         <TableCell className="py-2.5 text-xs text-slate-700 font-medium">
                           {deptSummary.name} <span className="text-[10px] text-slate-400">({deptSummary.code})</span>
                         </TableCell>
@@ -644,10 +649,10 @@ export default function DesignationMasters() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All Departments</SelectItem>
-                  {departments.map((d: any) => {
-                    const idVal = d.departmentId || d.id;
+                  {departments.map((d: any, idx: number) => {
+                    const idVal = d.departmentId || d.id || `filter-dept-${idx}`;
                     return (
-                      <SelectItem key={idVal} value={idVal}>{d.departmentName}</SelectItem>
+                      <SelectItem key={`filter-dept-opt-${idVal}-${idx}`} value={idVal}>{d.departmentName}</SelectItem>
                     );
                   })}
                 </SelectContent>
@@ -706,7 +711,7 @@ export default function DesignationMasters() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredDesignations.map((desig: any) => {
+                  filteredDesignations.map((desig: any, idx: number) => {
                     // Decide state badges
                     let statusColor = "bg-slate-100 text-slate-600 border-slate-200";
                     if (desig.status === "Active") statusColor = "bg-emerald-50 text-emerald-700 border-emerald-200";
@@ -714,10 +719,16 @@ export default function DesignationMasters() {
                     else if (desig.status === "Approval") statusColor = "bg-indigo-50 text-indigo-700 border-indigo-200";
                     else if (desig.status === "Obsolete") statusColor = "bg-rose-50 text-rose-700 border-rose-200";
 
+                    const desigUniqueKey = desig.designationId || desig.id || `desig-${idx}`;
+
                     return (
-                      <TableRow key={desig.designationId} className="hover:bg-slate-50/50 transition-all font-sans select-none">
-                        <TableCell className="font-semibold text-slate-700 text-xs py-3 max-w-xs truncate">{desig.designationName}</TableCell>
-                        <TableCell className="text-slate-500 text-xs py-3">{desig.departmentName || "N/A"}</TableCell>
+                      <TableRow key={`desig-table-row-${desigUniqueKey}-v${desig.version || 1}-${idx}`} className="hover:bg-slate-50/50 transition-all font-sans select-none">
+                        <TableCell className="font-semibold text-slate-700 text-xs py-3 max-w-xs truncate">
+                          <HighlightText text={desig.designationName} search={searchName} />
+                        </TableCell>
+                        <TableCell className="text-slate-500 text-xs py-3">
+                          <HighlightText text={desig.departmentName || "N/A"} search={searchName} />
+                        </TableCell>
                         <TableCell className="text-center py-3 text-xs">
                           <span className="bg-slate-50 border border-slate-150 px-2 py-0.5 rounded font-mono text-xs font-medium text-slate-600">v{desig.version || 1}</span>
                         </TableCell>
@@ -837,10 +848,10 @@ export default function DesignationMasters() {
                   <SelectValue placeholder="Select active department Base" />
                 </SelectTrigger>
                 <SelectContent>
-                  {departments.filter((d: any) => d.status === "Active").map((d: any) => {
-                    const idVal = d.departmentId || d.id;
+                  {departments.filter((d: any) => d.status === "Active").map((d: any, idx: number) => {
+                    const idVal = d.departmentId || d.id || `form-active-dept-${idx}`;
                     return (
-                      <SelectItem key={idVal} value={idVal}>{d.departmentName} ({d.departmentCode})</SelectItem>
+                      <SelectItem key={`form-active-dept-${idVal}-${idx}`} value={idVal}>{d.departmentName} ({d.departmentCode})</SelectItem>
                     );
                   })}
                 </SelectContent>
@@ -927,17 +938,23 @@ export default function DesignationMasters() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {designations.map((desig: any) => {
-                    const matchUserCount = usersForDesignation(desig.designationName).length;
-                    return (
-                      <TableRow 
-                        key={desig.designationId} 
-                        onClick={() => {
-                          setSelectedTotalDesig(desig);
-                          setIsDesignationUsersOpen(true);
-                        }}
-                        className="hover:bg-[#FF6321]/5 cursor-pointer transition-colors"
-                      >
+                  {designations.length === 0 ? (
+                    <TableRow key="empty-drilldown-desigs">
+                      <TableCell colSpan={4} className="text-center text-xs text-slate-400 py-4">No designations found</TableCell>
+                    </TableRow>
+                  ) : (
+                    designations.map((desig: any, idx: number) => {
+                      const matchUserCount = usersForDesignation(desig.designationName).length;
+                      const desigKey = desig.designationId || desig.id || `drilldown-desig-${idx}`;
+                      return (
+                        <TableRow 
+                          key={`drilldown-desig-row-${desigKey}-v${desig.version || 1}-${idx}`} 
+                          onClick={() => {
+                            setSelectedTotalDesig(desig);
+                            setIsDesignationUsersOpen(true);
+                          }}
+                          className="hover:bg-[#FF6321]/5 cursor-pointer transition-colors"
+                        >
                         <TableCell className="text-xs font-semibold text-slate-700 py-3">{desig.designationName}</TableCell>
                         <TableCell className="text-xs text-slate-500 py-3">{desig.departmentName}</TableCell>
                         <TableCell className="text-xs text-center py-3">v{desig.version}</TableCell>
@@ -948,7 +965,8 @@ export default function DesignationMasters() {
                         </TableCell>
                       </TableRow>
                     );
-                  })}
+                    })
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -984,8 +1002,8 @@ export default function DesignationMasters() {
               </div>
             ) : (
               <div className="space-y-2 mt-2">
-                {selectedTotalDesig && usersForDesignation(selectedTotalDesig.designationName).map((u: any) => (
-                  <div key={u.uid} className="flex justify-between items-center bg-slate-100/50 p-3 rounded-2xl border border-slate-200/50 hover:bg-slate-50 transition-colors">
+                {selectedTotalDesig && usersForDesignation(selectedTotalDesig.designationName).map((u: any, idx: number) => (
+                  <div key={`user-reg-${u.uid || u.id || u.employeeId || u.email || idx}-${idx}`} className="flex justify-between items-center bg-slate-100/50 p-3 rounded-2xl border border-slate-200/50 hover:bg-slate-50 transition-colors">
                     <div>
                       <div className="text-xs font-bold text-slate-800">{u.displayName || u.username}</div>
                       <div className="text-[10px] text-slate-500 mt-0.5">{u.email}</div>
@@ -1116,7 +1134,7 @@ export default function DesignationMasters() {
                 ) : (
                   <div className="relative pl-6 border-l border-slate-200 space-y-6">
                     {timelineLogs.map((log: any, idx: number) => (
-                      <div key={log.timelineId || idx} className="relative">
+                      <div key={`timeline-item-${log.timelineId || log.id || idx}-${idx}`} className="relative">
                         {/* Dot */}
                         <div className="absolute -left-[30px] top-1 w-4 h-4 rounded-full bg-white border-2 border-[#FF6321] flex items-center justify-center z-10">
                           <div className="w-1.5 h-1.5 rounded-full bg-[#FF6321]" />
@@ -1159,7 +1177,7 @@ export default function DesignationMasters() {
                 ) : (
                   <div className="space-y-3 select-text">
                     {auditLogs.map((log: any, idx: number) => (
-                      <div key={log.logId || idx} className="p-4 rounded-2xl border border-slate-150 bg-slate-50 space-y-2">
+                      <div key={`audit-log-item-${log.logId || log.id || idx}-${idx}`} className="p-4 rounded-2xl border border-slate-150 bg-slate-50 space-y-2">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-100 pb-2">
                           <span className="text-xs bg-slate-200 font-bold px-2.5 py-0.5 rounded text-slate-700">ACTION: {log.action || "Log"}</span>
                           <span className="text-[10px] text-slate-400 font-mono">{new Date(log.timestamp).toLocaleString()}</span>
