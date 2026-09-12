@@ -16,7 +16,10 @@ import {
   Unlock,
   ChevronRight,
   Edit3,
-  Send
+  Send,
+  AlertTriangle,
+  MoveDiagonal2,
+  ArrowLeftRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import api from '../services/api';
@@ -61,6 +64,7 @@ import { cn } from '../lib/utils';
 import { BatchSheetMaster, BatchSheetRecord, RecordStatus, getUserBaseRole } from '../types';
 import { SignatureDialog } from '../components/SignatureDialog';
 import { SecurePDFViewer } from '../components/SecurePDFViewer';
+import { BatchSheetMasterVersionUpdateImpactModal } from '../components/BatchSheetMasterVersionUpdateImpactModal';
 import { getWorkflowActionStatus } from '../lib/workflowEngine';
 
 export default function BatchSheetMasterDetail() {
@@ -101,6 +105,10 @@ export default function BatchSheetMasterDetail() {
   const [isSubmitMasterDialogOpen, setIsSubmitMasterDialogOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isSubmittingMaster, setIsSubmittingMaster] = useState(false);
+  const [impactData, setImpactData] = useState<any | null>(null);
+  const [isImpactChecking, setIsImpactChecking] = useState(false);
+  const [isImpactDialogOpen, setIsImpactDialogOpen] = useState(false);
+  const [proceedWithDiscard, setProceedWithDiscard] = useState(false);
 
   const baseRole = getUserBaseRole(user);
   const isAdmin = baseRole === 'ADMIN' || user?.permissions?.includes('user:manage');
@@ -129,8 +137,8 @@ export default function BatchSheetMasterDetail() {
 
   const canReview = !!user?.permissions?.includes('batch_sheet_master:review');
   const canApprove = !!user?.permissions?.includes('batch_sheet_master:approve');
-  const isQA = baseRole === 'QA' || canReview || canApprove;
-  const isProduction = baseRole === 'PRODUCTION_MANAGER' || user?.permissions?.includes('batch_sheet_master:create') || user?.permissions?.includes('batch_sheet_master:edit') || user?.permissions?.includes('batch_sheet_master:submit');
+  const isQA = ['QA_CHEMIST', 'QA_INCHARGE', 'QA_MANAGER', 'QA'].includes(baseRole) || canReview || canApprove;
+  const isProduction = ['PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER'].includes(baseRole) || user?.permissions?.includes('batch_sheet_master:create') || user?.permissions?.includes('batch_sheet_master:edit') || user?.permissions?.includes('batch_sheet_master:submit');
   const canManage = isQA || isProduction;
 
   const fetchData = async () => {
@@ -338,6 +346,29 @@ export default function BatchSheetMasterDetail() {
     }
   };
 
+  const handleInitiateUpdateRequest = async () => {
+    if (!id) return;
+    setIsImpactChecking(true);
+    try {
+      const response = await api.get(`/batch-sheet-masters/${id}/active-issuance-impact`);
+      if (response.data.success) {
+        const impact = response.data.data;
+        setImpactData(impact);
+        if (impact.hasActiveRequests) {
+          setIsImpactDialogOpen(true);
+        } else {
+          setIsUpdateDialogOpen(true);
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to check active issuance impact', error);
+      toast.error(error.response?.data?.message || 'Failed to check active issuance impact');
+      setIsUpdateDialogOpen(true);
+    } finally {
+      setIsImpactChecking(false);
+    }
+  };
+
   const handleUpdateMasterRequest = async (password?: string) => {
     if (!updateReason.trim()) {
       toast.error('Please provide a reason for update');
@@ -357,14 +388,26 @@ export default function BatchSheetMasterDetail() {
     try {
       const response = await api.post(`/batch-sheet-masters/${id}/request-update`, {
         changeReason: updateReason,
+        discardActiveRequests: proceedWithDiscard || (impactData?.hasActiveRequests === true),
+        expectedSnapshot: impactData?.expectedSnapshot,
         password
       });
       if (response.data.success) {
-        toast.success('Update requested successfully');
+        const discardedCount = response.data.data?.incompleteSheetsDiscarded ?? response.data.data?.discardedCount ?? 0;
+        const retainedCount = response.data.data?.completedSheetsRetained ?? 0;
+        const newVer = response.data.data?.newVersion || response.data.data?.version || impactData?.nextVersion || 'next';
+        
+        if (discardedCount > 0 || retainedCount > 0) {
+          toast.success(`Master unlocked to v${newVer}. ${discardedCount} incomplete sheet(s) discarded, ${retainedCount} completed sheet(s) retained.`);
+        } else {
+          toast.success(`Master unlocked to version v${newVer}`);
+        }
         setIsUpdateDialogOpen(false);
+        setIsImpactDialogOpen(false);
         setSignatureConfig({ isOpen: false, type: null, recordId: null });
         setUpdateReason('');
-        fetchData();
+        setProceedWithDiscard(false);
+        navigate(`/batch-sheet-masters/${id}/edit`);
       }
     } catch (error: any) {
       console.error('Failed to request update', error);
@@ -691,47 +734,83 @@ export default function BatchSheetMasterDetail() {
           )}
 
           {getMasterActionStatus('request-update').visible && (
-            <Dialog open={isUpdateDialogOpen} onOpenChange={setIsUpdateDialogOpen}>
-              <DialogTrigger render={
-                <Button 
-                  variant="outline" 
-                  disabled={!getMasterActionStatus('request-update').enabled}
-                  title={getMasterActionStatus('request-update').tooltip}
-                  className="border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-6 h-12 rounded-full"
-                >
+            <>
+              <Button 
+                variant="outline" 
+                onClick={handleInitiateUpdateRequest}
+                disabled={!getMasterActionStatus('request-update').enabled || isImpactChecking}
+                title={getMasterActionStatus('request-update').tooltip}
+                className="border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-6 h-12 rounded-full"
+              >
+                {isImpactChecking ? (
+                  <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-2" />
+                ) : (
                   <Edit3 className="w-4 h-4 mr-2" />
-                  {master.status === 'REJECTED' ? 'Update Batch Sheet' : master.status === 'RETURNED' ? 'Update Batch Sheet' : 'Request Update'}
-                </Button>
-              } />
-              <DialogContent className="rounded-3xl">
-                <DialogHeader>
-                  <DialogTitle>
-                    {master.status === 'REJECTED' ? 'Update Rejected Batch Sheet Master' : master.status === 'RETURNED' ? 'Revise Batch Sheet Master' : 'Request Master Update'}
-                  </DialogTitle>
-                  <DialogDescription>
-                    {master.status === 'REJECTED'
-                      ? 'This will unlock the rejected batch sheet master and place it Under Update for revisions.'
-                      : 'This will unlock the master for editing. You must provide a valid reason for this update.'}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="update-reason">Reason for Update / Changes</Label>
-                    <Input 
-                      id="update-reason" 
-                      placeholder={master.status === 'REJECTED' ? 'e.g. Correcting formula parameters following QA rejection feedback' : 'e.g. Updating mixing speeds, adding safety step'} 
-                      value={updateReason}
-                      onChange={(e) => setUpdateReason(e.target.value)}
-                      className="rounded-xl bg-slate-50 border-none h-12"
-                    />
+                )}
+                {master.status === 'REJECTED' ? 'Update Batch Sheet' : master.status === 'RETURNED' ? 'Update Batch Sheet' : 'Request Update'}
+              </Button>
+
+              {/* Standard Request Update Dialog (when NO active issuance requests) */}
+              <Dialog open={isUpdateDialogOpen} onOpenChange={setIsUpdateDialogOpen}>
+                <DialogContent className="rounded-3xl max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>
+                      {master.status === 'REJECTED' ? 'Update Rejected Batch Sheet Master' : master.status === 'RETURNED' ? 'Revise Batch Sheet Master' : 'Request Master Update'}
+                    </DialogTitle>
+                    <DialogDescription>
+                      {master.status === 'REJECTED'
+                        ? 'This will unlock the rejected batch sheet master and place it Under Update for revisions.'
+                        : `This will advance the master version to v${impactData?.nextVersion || 'next'} and unlock it for editing. You must provide a valid reason.`}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    {impactData && (
+                      <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex items-center justify-between text-xs">
+                        <span className="text-slate-600 font-medium">Current Version: <strong className="text-slate-900 font-bold">v{impactData.currentVersion}</strong></span>
+                        <span className="text-indigo-600 font-extrabold">&rarr; Target Version: <strong className="text-indigo-700 font-bold">v{impactData.nextVersion}</strong></span>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label htmlFor="update-reason">Reason for Update / Changes *</Label>
+                      <Input 
+                        id="update-reason" 
+                        placeholder={master.status === 'REJECTED' ? 'e.g. Correcting formula parameters following QA rejection feedback' : 'e.g. Updating mixing speeds, adding safety step'} 
+                        value={updateReason}
+                        onChange={(e) => setUpdateReason(e.target.value)}
+                        className="rounded-xl bg-slate-50 border-none h-12"
+                      />
+                    </div>
                   </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="ghost" onClick={() => setIsUpdateDialogOpen(false)} className="rounded-full">Cancel</Button>
-                  <Button onClick={() => handleUpdateMasterRequest()} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-6">Proceed to Signature</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+                  <DialogFooter>
+                    <Button variant="ghost" onClick={() => setIsUpdateDialogOpen(false)} className="rounded-full">Cancel</Button>
+                    <Button onClick={() => handleUpdateMasterRequest()} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-6">Proceed to Signature</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              {/* Batch Sheet Master Version Update Impact Assessment Modal */}
+              <BatchSheetMasterVersionUpdateImpactModal
+                isOpen={isImpactDialogOpen}
+                onClose={() => {
+                  setIsImpactDialogOpen(false);
+                  setUpdateReason('');
+                  setProceedWithDiscard(false);
+                }}
+                master={master}
+                impactData={impactData}
+                initialReason={updateReason}
+                onProceedToSignature={(reasonText, options) => {
+                  setUpdateReason(reasonText);
+                  setProceedWithDiscard(options.proceedWithDiscard);
+                  setIsImpactDialogOpen(false);
+                  setSignatureConfig({
+                    isOpen: true,
+                    type: 'request_update',
+                    recordId: null
+                  });
+                }}
+              />
+            </>
           )}
 
           {getMasterActionStatus('retire').visible && (
@@ -1272,7 +1351,9 @@ export default function BatchSheetMasterDetail() {
             : signatureConfig.type === 'retire'
             ? 'You are permanently retiring this master record. This action requires an electronic signature and is irreversible.'
             : signatureConfig.type === 'request_update'
-            ? 'You are requesting an update to this approved master record. This action requires an electronic signature.'
+            ? (impactData?.hasActiveRequests
+                ? `You are updating this master record to version ${impactData.nextVersion} and authorizing the atomic discard of ${impactData.count} active issuance request(s). This action requires an electronic signature.`
+                : 'You are requesting an update to this approved master record. This action requires an electronic signature.')
             : 'You are submitting updated master record for review. This action requires an electronic signature.'
         }
         meaning={
@@ -1289,7 +1370,9 @@ export default function BatchSheetMasterDetail() {
             : signatureConfig.type === 'retire'
             ? 'I certify that I am discontinuing this master record. This action is intentional and logged.'
             : signatureConfig.type === 'request_update'
-            ? 'I am requesting an update to this approved master record. This action will be logged and requires justification.'
+            ? (impactData?.hasActiveRequests
+                ? `I certify that I am updating this master record to version ${impactData.nextVersion} and authorizing the atomic discard of ${impactData.count} active issuance request(s) due to version change.`
+                : 'I am requesting an update to this approved master record. This action will be logged and requires justification.')
             : 'I certify that I have reviewed the updates to this master record and am submitting it for QA approval.'
         }
         isLoading={isApproving || isReviewing || isReturning || isRejecting || isRetiring || isUpdating || isSubmittingMaster}

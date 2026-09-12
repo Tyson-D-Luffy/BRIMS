@@ -1,24 +1,57 @@
-export type UserRole = string;
+export type UserRole = 
+  | 'ADMIN'
+  | 'QA_CHEMIST'
+  | 'QA_INCHARGE'
+  | 'QA_MANAGER'
+  | 'PRODUCTION_INCHARGE'
+  | string;
 
 export function getUserBaseRole(user: any): string {
-  if (!user) return 'OPERATOR';
+  if (!user) return 'PRODUCTION_INCHARGE';
   // Check system admin email bypass
   if (user.email && user.email.toLowerCase() === 'shakshay04@gmail.com') {
     return 'ADMIN';
   }
-  const role = user.role || user.designation || '';
+
+  // Check designation profile ID if assigned directly
+  if (user.designationPermissionProfileId) {
+    const profId = String(user.designationPermissionProfileId).toLowerCase();
+    if (profId.includes('admin')) return 'ADMIN';
+    if (profId.includes('qa-manager')) return 'QA_MANAGER';
+    if (profId.includes('qa-incharge')) return 'QA_INCHARGE';
+    if (profId.includes('qa-chemist')) return 'QA_CHEMIST';
+    if (profId.includes('production-incharge')) return 'PRODUCTION_INCHARGE';
+  }
+
+  const role = user.functionalRole || user.role || user.designation || '';
   const normalized = role.toUpperCase().trim();
   
   if (normalized.includes("ADMIN") || normalized.includes("SYSTEM") || normalized.includes("IT")) {
     return "ADMIN";
   }
-  if (normalized.includes("QA") || normalized.includes("QC") || normalized.includes("QUALITY") || normalized.includes("CONTROL") || normalized.includes("AUDIT")) {
-    return "QA";
+
+  if (normalized.includes("QA MANAGER") || normalized.includes("QUALITY ASSURANCE MANAGER") || normalized.includes("HEAD QA") || normalized.includes("QA HEAD") || normalized.includes("VP QA")) {
+    return "QA_MANAGER";
   }
-  if (normalized.includes("PRODUCTION") || normalized.includes("MANAGER") || normalized.includes("HEAD") || normalized.includes("SUPERVISOR") || normalized.includes("INCHARGE") || normalized.includes("LEAD")) {
-    return "PRODUCTION_MANAGER";
+
+  if (normalized.includes("QA INCHARGE") || normalized.includes("QA IN-CHARGE") || normalized.includes("QA SUPERVISOR") || normalized.includes("QA LEAD")) {
+    return "QA_INCHARGE";
   }
-  return "OPERATOR";
+
+  if (normalized.includes("QA CHEMIST") || normalized.includes("CHEMIST") || normalized.includes("ANALYST")) {
+    return "QA_CHEMIST";
+  }
+
+  if (normalized.includes("PRODUCTION") || normalized.includes("OPERATOR") || normalized.includes("MANUFACTURING")) {
+    return "PRODUCTION_INCHARGE";
+  }
+
+  // General QA fallback
+  if (normalized.includes("QA") || normalized.includes("QC") || normalized.includes("QUALITY")) {
+    return "QA_CHEMIST";
+  }
+
+  return "PRODUCTION_INCHARGE";
 }
 
 export interface User {
@@ -27,6 +60,7 @@ export interface User {
   role: UserRole;
   displayName?: string;
   designation?: string;
+  functionalRole?: string;
   designationId?: string;
   designationName?: string;
   designationPermissionProfileId?: string;
@@ -144,7 +178,7 @@ export interface ElectronicSignature {
   createdAt: string;
 }
 
-export type BatchIssuanceStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'ISSUED' | 'IN_PROGRESS' | 'COMPLETED' | 'RETURNED' | 'CANCELLED' | 'READY_FOR_PRODUCTION_HANDOVER' | 'PRODUCTION_IN_PROGRESS' | 'READY_FOR_QA_REVIEW' | 'HANDED_OVER';
+export type BatchIssuanceStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'DISCARDED' | 'ISSUED' | 'IN_PROGRESS' | 'COMPLETED' | 'RETURNED' | 'CANCELLED' | 'READY_FOR_PRODUCTION_HANDOVER' | 'PRODUCTION_IN_PROGRESS' | 'READY_FOR_QA_REVIEW' | 'HANDED_OVER' | 'PARTIALLY_COMPLETED';
 
 export type PrintJobStatus = 
   | 'PENDING_SEQUENCE'
@@ -161,7 +195,9 @@ export type PrintJobStatus =
   | 'PRINT_COMPLETED'
   | 'PRINTED'
   | 'REPRINTED'
-  | 'PRINT_FAILED';
+  | 'PRINT_FAILED'
+  | 'DISCARDED'
+  | 'COMPLETED';
 
 export type PrintDeliveryMethod = 'PRINTER' | 'PDF_DOWNLOAD';
 
@@ -263,10 +299,14 @@ export interface BatchSheetItem {
   printedAt?: string;
   printedBy?: string;
   printedByName?: string;
+  printedByDesignation?: string;
+  printedByRole?: string;
   printedByEmployeeId?: string;
   completedAt?: string;
   completedBy?: string;
   completedByName?: string;
+  completedByDesignation?: string;
+  completedByRole?: string;
   completedByEmployeeId?: string;
   interruptedAt?: string;
   interruptedBy?: string;
@@ -327,6 +367,33 @@ export interface BatchSheetItem {
   // Custody tracking
   currentCustody?: string;
   currentOperationalState?: string;
+
+  // Individual Discard & Physical Return Reconciliation fields
+  discardStatus?: string | null;
+  discardReason?: string | null;
+  discardedAt?: string | null;
+  discardedBy?: string | null;
+  discardedByName?: string | null;
+  discardedByRole?: string | null;
+  discardedByEmployeeId?: string | null;
+  versionChangeId?: string | null;
+  stateBeforeDiscard?: string | null;
+  custodyBeforeDiscard?: string | null;
+  returnToQaRequired?: boolean;
+  isRetained?: boolean;
+  returnToQaStatus?: 'NOT_REQUIRED_ALREADY_WITH_QA' | 'AWAITING_PRODUCTION_RETURN' | 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT' | 'RECEIVED_BACK_BY_QA' | 'CUSTODY_RECONCILIATION_REQUIRED' | 'AWAITING_RETURN_TO_QA' | null;
+  returnedToQaBy?: string | null;
+  returnedToQaByName?: string | null;
+  returnedToQaByRole?: string | null;
+  returnedToQaByEmployeeId?: string | null;
+  returnedToQaAt?: string | null;
+  returnedToQaSignatureId?: string | null;
+  receivedBackByQa?: string | null;
+  receivedBackByQaName?: string | null;
+  receivedBackByQaRole?: string | null;
+  receivedBackByQaEmployeeId?: string | null;
+  receivedBackAt?: string | null;
+  receivedBackSignatureId?: string | null;
 }
 
 export interface BatchIssuance {
@@ -355,10 +422,27 @@ export interface BatchIssuance {
   productInfo?: any;
   issuedByName?: string;
   issuedByRole?: string;
+  approvedBy?: string;
+  approvedByName?: string;
+  approvedByRole?: string;
+  approvedAt?: string;
+  requestedBy?: string;
+  requestedByName?: string;
+  requestedByRole?: string;
   requestType?: 'NEW' | 'REPRINT';
   reprintReason?: string;
   comments?: string;
   rejectionReason?: string;
+  discardReason?: string;
+  discardedAt?: string;
+  discardedBy?: string;
+  discardedByName?: string;
+  discardedByEmail?: string;
+  completedSheetCount?: number;
+  discardedSheetCount?: number;
+  reconciliationPendingCount?: number;
+  aggregateStatus?: string;
+  versionChangeId?: string;
   printCounts?: { [item: string]: number };
   batchSheets?: BatchSheetItem[];
   printSequenceStatus?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';

@@ -9,8 +9,8 @@ const router = Router();
 // Only Admin can create, update, delete or assign roles
 router.post("/login-event", authenticateToken, UserController.loginEvent);
 router.post("/", authenticateToken, authorizeRoles(["ADMIN"]), validate(userSchema), UserController.create);
-router.get("/", authenticateToken, authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"]), UserController.getAll);
-router.get("/:id", authenticateToken, authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"]), UserController.getById);
+router.get("/", authenticateToken, authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]), UserController.getAll);
+router.get("/:id", authenticateToken, authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]), UserController.getById);
 router.put("/:id", authenticateToken, authorizeRoles(["ADMIN"]), validate(updateUserSchema), UserController.update);
 router.delete("/:id", authenticateToken, authorizeRoles(["ADMIN"]), UserController.delete);
 router.post("/:id/roles", authenticateToken, authorizeRoles(["ADMIN"]), validate(assignRolesSchema), UserController.assignRoles);

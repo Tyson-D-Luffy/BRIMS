@@ -27,7 +27,8 @@ import {
   Square,
   AlertTriangle,
   FileCheck2,
-  Layers
+  Layers,
+  RotateCcw
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -50,7 +51,9 @@ type CustodyOperation =
   | 'PRODUCTION_RECEIVE' 
   | 'SEND_QA_REVIEW' 
   | 'QA_RECEIVE' 
-  | 'COMPLETE_QA_REVIEW';
+  | 'COMPLETE_QA_REVIEW'
+  | 'RETURN_DISCARDED_TO_QA'
+  | 'RECEIVE_RETURNED_DISCARDED';
 
 export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> = ({
   batch,
@@ -63,7 +66,7 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
   const userPerms = user?.permissions || [];
 
   // Active filter tab
-  const [filterTab, setFilterTab] = useState<'ALL' | 'HANDOVER' | 'PRODUCTION' | 'QA_REVIEW' | 'COMPLETED'>('ALL');
+  const [filterTab, setFilterTab] = useState<'ALL' | 'HANDOVER' | 'PRODUCTION' | 'QA_REVIEW' | 'COMPLETED' | 'DISCARDED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Selection state
@@ -87,31 +90,41 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
   }, [batch]);
 
   // Role permissions
-  const canQAHandover = baseRole === 'ADMIN' || baseRole === 'QA' || 
+  const isQA = ['QA_CHEMIST', 'QA_INCHARGE', 'QA_MANAGER', 'QA'].includes(baseRole);
+  const isProd = ['PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER', 'OPERATOR'].includes(baseRole);
+
+  const canQAHandover = baseRole === 'ADMIN' || isQA || 
     userPerms.some(p => ['op:ready_for_handover', 'batch:approve', 'batch:review', 'batch:print', 'op:issued'].includes(p));
 
-  const canProductionReceive = baseRole === 'ADMIN' || baseRole === 'PRODUCTION_MANAGER' || baseRole === 'OPERATOR' ||
+  const canProductionReceive = baseRole === 'ADMIN' || isProd ||
     userPerms.some(p => ['op:production_in_progress', 'batch:sign', 'batch:create', 'batch:edit'].includes(p));
 
-  const canSendForQaReview = baseRole === 'ADMIN' || baseRole === 'PRODUCTION_MANAGER' || baseRole === 'OPERATOR' ||
+  const canSendForQaReview = baseRole === 'ADMIN' || isProd ||
     userPerms.some(p => ['op:ready_for_qa_review', 'batch:sign', 'batch:edit'].includes(p));
 
-  const canQaReceiveAndReview = baseRole === 'ADMIN' || baseRole === 'QA' ||
+  const canQaReceiveAndReview = baseRole === 'ADMIN' || isQA ||
+    userPerms.some(p => ['op:completed', 'batch:approve', 'batch:review'].includes(p));
+
+  const canProductionReturnDiscarded = baseRole === 'ADMIN' || isProd ||
+    userPerms.some(p => ['op:production_in_progress', 'batch:sign', 'batch:edit', 'batch:create'].includes(p));
+
+  const canQaReceiveDiscarded = baseRole === 'ADMIN' || isQA ||
     userPerms.some(p => ['op:completed', 'batch:approve', 'batch:review'].includes(p));
 
   // Eligibility helpers
   const isSheetEligibleForHandover = (s: BatchSheetItem) => {
+    if (s.discardStatus === 'DISCARDED_VERSION_CHANGE' || s.status === 'DISCARDED') return false;
     const isPrinted = s.status === 'PRINT_COMPLETED' || s.status === 'PRINTED' || s.status === 'REPRINTED' || (s.printCount || 0) > 0;
     return isPrinted && s.handoverStatus !== 'HANDED_OVER_TO_PRODUCTION';
   };
 
   const isSheetEligibleForProductionReceive = (s: BatchSheetItem) => {
+    if (s.discardStatus === 'DISCARDED_VERSION_CHANGE' || s.status === 'DISCARDED') return false;
     return s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' && s.productionReceiptStatus !== 'RECEIVED_BY_PRODUCTION';
   };
 
   const isSheetEligibleForQaReturn = (s: BatchSheetItem) => {
-    // If QA has handed over a batch sheet to Production, Production can send it back for QA Review
-    // even if the Ready to Handover step is partially completed (i.e. some batch sheets are still pending for Handover)
+    if (s.discardStatus === 'DISCARDED_VERSION_CHANGE' || s.status === 'DISCARDED') return false;
     const isHandedOver = s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' || s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION';
     return isHandedOver && 
       s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW' && 
@@ -119,11 +132,33 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
   };
 
   const isSheetEligibleForQaReceive = (s: BatchSheetItem) => {
+    if (s.discardStatus === 'DISCARDED_VERSION_CHANGE' || s.status === 'DISCARDED') return false;
     return s.qaReturnStatus === 'SENT_FOR_QA_REVIEW' && s.qaReceiptStatus !== 'RECEIVED_BY_QA';
   };
 
   const isSheetEligibleForQaReviewComplete = (s: BatchSheetItem) => {
+    if (s.discardStatus === 'DISCARDED_VERSION_CHANGE' || s.status === 'DISCARDED') return false;
     return s.qaReceiptStatus === 'RECEIVED_BY_QA' && s.qaReviewStatus !== 'QA_REVIEW_COMPLETED';
+  };
+
+  // Discarded and Blank sheet physical return eligibility helpers
+  const isSheetEligibleForReturnToQa = (s: BatchSheetItem) => {
+    const isDiscarded = s.discardStatus === 'DISCARDED_VERSION_CHANGE' || s.status === 'DISCARDED';
+    if (!isDiscarded) {
+      // Eligible if printed, handed over, or in production custody, and not yet reviewed or completed
+      const isPrinted = s.status === 'PRINT_COMPLETED' || s.status === 'PRINTED' || s.status === 'REPRINTED' || (s.printCount || 0) > 0;
+      const inProdOrHandover = s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' || s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION';
+      return (isPrinted || inProdOrHandover) && s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW' && s.qaReviewStatus !== 'QA_REVIEW_COMPLETED' && s.status !== 'COMPLETED';
+    }
+    return (
+      s.returnToQaStatus === 'AWAITING_PRODUCTION_RETURN' ||
+      s.returnToQaStatus === 'AWAITING_RETURN_TO_QA' ||
+      (Boolean(s.returnToQaRequired) && !s.returnToQaStatus)
+    );
+  };
+
+  const isSheetEligibleForQaReceiveReturned = (s: BatchSheetItem) => {
+    return s.returnToQaStatus === 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT';
   };
 
   // Aggregated Counts
@@ -132,11 +167,17 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
   const eligibleForHandoverCount = sheets.filter(isSheetEligibleForHandover).length;
   const handedOverCount = sheets.filter(s => s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION').length;
   const awaitingProdReceiptCount = sheets.filter(isSheetEligibleForProductionReceive).length;
-  const inProductionCount = sheets.filter(s => (s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION' || s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION') && s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW').length;
-  const sentForQaReviewCount = sheets.filter(s => s.qaReturnStatus === 'SENT_FOR_QA_REVIEW').length;
+  const inProductionCount = sheets.filter(s => (s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION' || s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION') && s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW' && s.discardStatus !== 'DISCARDED_VERSION_CHANGE' && s.status !== 'DISCARDED').length;
+  const sentForQaReviewCount = sheets.filter(s => s.qaReturnStatus === 'SENT_FOR_QA_REVIEW' && s.discardStatus !== 'DISCARDED_VERSION_CHANGE' && s.status !== 'DISCARDED').length;
   const awaitingQaReceiptCount = sheets.filter(isSheetEligibleForQaReceive).length;
   const underQaReviewCount = sheets.filter(isSheetEligibleForQaReviewComplete).length;
-  const completedCount = sheets.filter(s => s.qaReviewStatus === 'QA_REVIEW_COMPLETED').length;
+  const completedCount = sheets.filter(s => s.qaReviewStatus === 'QA_REVIEW_COMPLETED' || s.status === 'COMPLETED' || s.isRetained).length;
+
+  // Discarded counts
+  const discardedCount = sheets.filter(s => s.discardStatus === 'DISCARDED_VERSION_CHANGE' || s.status === 'DISCARDED').length;
+  const awaitingReturnToQaCount = sheets.filter(isSheetEligibleForReturnToQa).length;
+  const returnedAwaitingQaReceiptCount = sheets.filter(isSheetEligibleForQaReceiveReturned).length;
+  const reconciledDiscardedCount = sheets.filter(s => s.returnToQaStatus === 'RECEIVED_BACK_BY_QA').length;
 
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
@@ -156,13 +197,16 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
         return isSheetEligibleForHandover(sheet) || isSheetEligibleForProductionReceive(sheet);
       }
       if (filterTab === 'PRODUCTION') {
-        return (sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION' || sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION') && sheet.qaReturnStatus !== 'SENT_FOR_QA_REVIEW';
+        return (sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION' || sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION') && sheet.qaReturnStatus !== 'SENT_FOR_QA_REVIEW' && sheet.discardStatus !== 'DISCARDED_VERSION_CHANGE';
       }
       if (filterTab === 'QA_REVIEW') {
-        return sheet.qaReturnStatus === 'SENT_FOR_QA_REVIEW' && sheet.qaReviewStatus !== 'QA_REVIEW_COMPLETED';
+        return sheet.qaReturnStatus === 'SENT_FOR_QA_REVIEW' && sheet.qaReviewStatus !== 'QA_REVIEW_COMPLETED' && sheet.discardStatus !== 'DISCARDED_VERSION_CHANGE';
       }
       if (filterTab === 'COMPLETED') {
-        return sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED';
+        return sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED' || sheet.status === 'COMPLETED' || sheet.isRetained;
+      }
+      if (filterTab === 'DISCARDED') {
+        return sheet.discardStatus === 'DISCARDED_VERSION_CHANGE' || sheet.status === 'DISCARDED';
       }
       return true;
     });
@@ -170,6 +214,15 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
 
   // Determine selectable eligible items based on current context
   const getContextEligibleSheets = () => {
+    if (filterTab === 'DISCARDED') {
+      if (canProductionReturnDiscarded && sheets.some(isSheetEligibleForReturnToQa)) {
+        return sheets.filter(isSheetEligibleForReturnToQa);
+      }
+      if (canQaReceiveDiscarded && sheets.some(isSheetEligibleForQaReceiveReturned)) {
+        return sheets.filter(isSheetEligibleForQaReceiveReturned);
+      }
+      return sheets.filter(s => s.discardStatus === 'DISCARDED_VERSION_CHANGE' || s.status === 'DISCARDED');
+    }
     if (filterTab === 'HANDOVER') {
       return sheets.filter(isSheetEligibleForHandover);
     }
@@ -182,7 +235,13 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
     if (filterTab === 'COMPLETED') {
       return [];
     }
-    // In 'ALL' view: prioritize Production return for QA review if user has permission and sheets are ready
+    // In 'ALL' view: prioritize based on active permissions and eligible queues
+    if (canProductionReturnDiscarded && sheets.some(isSheetEligibleForReturnToQa)) {
+      return sheets.filter(isSheetEligibleForReturnToQa);
+    }
+    if (canQaReceiveDiscarded && sheets.some(isSheetEligibleForQaReceiveReturned)) {
+      return sheets.filter(isSheetEligibleForQaReceiveReturned);
+    }
     if (canSendForQaReview && sheets.some(isSheetEligibleForQaReturn)) {
       return sheets.filter(isSheetEligibleForQaReturn);
     }
@@ -242,6 +301,12 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
       case 'COMPLETE_QA_REVIEW':
         setChangeReason('QA review completed and certified conforming to 21 CFR Part 11 and GMP.');
         break;
+      case 'RETURN_DISCARDED_TO_QA':
+        setChangeReason('Physical blank/printed batch sheets discarded due to Version Change returned back to QA for reconciliation.');
+        break;
+      case 'RECEIVE_RETURNED_DISCARDED':
+        setChangeReason('QA Department received, inspected, and reconciled physical batch sheets discarded due to Version Change.');
+        break;
     }
   };
 
@@ -275,6 +340,12 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
           break;
         case 'COMPLETE_QA_REVIEW':
           endpoint = `/batches/${batch.id}/sheets/complete-qa-review`;
+          break;
+        case 'RETURN_DISCARDED_TO_QA':
+          endpoint = `/batches/${batch.id}/sheets/return-discarded-to-qa`;
+          break;
+        case 'RECEIVE_RETURNED_DISCARDED':
+          endpoint = `/batches/${batch.id}/sheets/receive-returned-discarded`;
           break;
         default:
           throw new Error('Invalid operation');
@@ -360,6 +431,74 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
         </CardHeader>
 
         <CardContent className="p-8 space-y-6">
+          {/* Discarded Reconciliation Notification Banner if applicable */}
+          {discardedCount > 0 && (
+            <div className="bg-rose-50/80 border border-rose-200 p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="p-2.5 rounded-xl bg-rose-100 text-rose-700 shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-rose-900 uppercase tracking-wide">
+                      Batch Sheet Master Version Update Impact
+                    </span>
+                    <Badge className="bg-rose-200 text-rose-900 border-rose-300 font-bold text-[10px]">
+                      {discardedCount} Sheet{discardedCount > 1 ? 's' : ''} Discarded
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-rose-800 mt-1 leading-relaxed">
+                    {awaitingReturnToQaCount > 0 && (
+                      <span className="block font-medium">
+                        • <strong>{awaitingReturnToQaCount}</strong> sheet(s) currently with Production requiring physical return to QA.
+                      </span>
+                    )}
+                    {returnedAwaitingQaReceiptCount > 0 && (
+                      <span className="block font-medium">
+                        • <strong>{returnedAwaitingQaReceiptCount}</strong> sheet(s) returned by Production awaiting QA physical receipt.
+                      </span>
+                    )}
+                    {reconciledDiscardedCount > 0 && (
+                      <span className="block text-emerald-800 font-medium">
+                        • <strong>{reconciledDiscardedCount}</strong> sheet(s) fully received and reconciled back to QA custody.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {awaitingReturnToQaCount > 0 && canProductionReturnDiscarded && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const eligible = sheets.filter(isSheetEligibleForReturnToQa).map(s => s.id);
+                      setSelectedSheetIds(eligible);
+                      handleOpenOperation('RETURN_DISCARDED_TO_QA');
+                    }}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl h-9 px-4 gap-1.5 shadow-sm"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    RETURN BLANK BATCH SHEET BACK TO QA ({awaitingReturnToQaCount})
+                  </Button>
+                )}
+                {returnedAwaitingQaReceiptCount > 0 && canQaReceiveDiscarded && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const eligible = sheets.filter(isSheetEligibleForQaReceiveReturned).map(s => s.id);
+                      setSelectedSheetIds(eligible);
+                      handleOpenOperation('RECEIVE_RETURNED_DISCARDED');
+                    }}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl h-9 px-4 gap-1.5 shadow-sm"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    RECEIVE RETURNED BATCH SHEET ({returnedAwaitingQaReceiptCount})
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Action Toolbar & Bulk Action Buttons */}
           <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-slate-50 p-5 rounded-2xl border border-slate-200/70">
             <div className="flex flex-wrap items-center gap-2">
@@ -419,6 +558,19 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
               >
                 Certified & Completed ({completedCount})
               </button>
+              {(discardedCount > 0 || batch.status === 'PARTIALLY_COMPLETED' || batch.status === 'DISCARDED') && (
+                <button
+                  onClick={() => setFilterTab('DISCARDED')}
+                  className={cn(
+                    "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all",
+                    filterTab === 'DISCARDED' 
+                      ? "bg-rose-600 text-white shadow-sm" 
+                      : "bg-white text-rose-700 hover:bg-rose-50 border border-rose-200"
+                  )}
+                >
+                  Discarded / Return to QA ({discardedCount})
+                </button>
+              )}
             </div>
 
             {/* Selection Controls */}
@@ -533,6 +685,40 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                 Certify QA Review ({selectedSheetIds.length})
               </Button>
             )}
+
+            {/* Production Return Discarded / Blank Sheets button */}
+            {canProductionReturnDiscarded && (discardedCount > 0 || sheets.some(isSheetEligibleForReturnToQa)) && (
+              <Button
+                onClick={() => handleOpenOperation('RETURN_DISCARDED_TO_QA')}
+                disabled={!selectedSheetIds.some(id => sheets.find(s => s.id === id && isSheetEligibleForReturnToQa(s)))}
+                className={cn(
+                  "h-10 px-5 rounded-2xl font-bold text-xs gap-2 transition-all",
+                  selectedSheetIds.some(id => sheets.find(s => s.id === id && isSheetEligibleForReturnToQa(s)))
+                    ? "bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-100"
+                    : "bg-slate-100 text-slate-400 border border-slate-200"
+                )}
+              >
+                <RotateCcw className="w-4 h-4" />
+                RETURN BLANK BATCH SHEET BACK TO QA ({selectedSheetIds.filter(id => sheets.find(s => s.id === id && isSheetEligibleForReturnToQa(s))).length})
+              </Button>
+            )}
+
+            {/* QA Receive Returned Discarded / Blank Sheets button */}
+            {canQaReceiveDiscarded && (discardedCount > 0 || sheets.some(isSheetEligibleForQaReceiveReturned)) && (
+              <Button
+                onClick={() => handleOpenOperation('RECEIVE_RETURNED_DISCARDED')}
+                disabled={!selectedSheetIds.some(id => sheets.find(s => s.id === id && isSheetEligibleForQaReceiveReturned(s)))}
+                className={cn(
+                  "h-10 px-5 rounded-2xl font-bold text-xs gap-2 transition-all",
+                  selectedSheetIds.some(id => sheets.find(s => s.id === id && isSheetEligibleForQaReceiveReturned(s)))
+                    ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-100"
+                    : "bg-slate-100 text-slate-400 border border-slate-200"
+                )}
+              >
+                <FileCheck2 className="w-4 h-4" />
+                RECEIVE RETURNED BATCH SHEET ({selectedSheetIds.filter(id => sheets.find(s => s.id === id && isSheetEligibleForQaReceiveReturned(s))).length})
+              </Button>
+            )}
           </div>
 
           {/* Table of Batch Sheets */}
@@ -565,13 +751,15 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                       const isSelected = selectedSheetIds.includes(sheet.id);
                       const isPrinted = sheet.status === 'PRINT_COMPLETED' || sheet.status === 'PRINTED' || sheet.status === 'REPRINTED' || (sheet.printCount || 0) > 0;
                       const custody = sheet.currentCustody || computeSheetCustody(sheet, batch.status);
+                      const isDiscarded = sheet.discardStatus === 'DISCARDED_VERSION_CHANGE' || sheet.status === 'DISCARDED';
 
                       return (
                         <tr 
                           key={sheet.id}
                           className={cn(
                             "hover:bg-slate-50/80 transition-colors",
-                            isSelected && "bg-indigo-50/40"
+                            isSelected && "bg-indigo-50/40",
+                            isDiscarded && "bg-rose-50/20"
                           )}
                         >
                           {/* Selection Checkbox */}
@@ -591,13 +779,23 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
 
                           {/* Sheet Number & Index */}
                           <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <span className="font-mono font-bold text-slate-900">
                                 {sheet.batchNumber}
                               </span>
                               <Badge variant="outline" className="text-[10px] font-semibold text-slate-500 py-0 px-1.5 h-4">
                                 #{sheet.sequenceIndex + 1}
                               </Badge>
+                              {isDiscarded && (
+                                <Badge className="bg-rose-100 text-rose-700 border-rose-200 text-[9px] font-extrabold uppercase py-0 px-1.5 h-4">
+                                  Discarded
+                                </Badge>
+                              )}
+                              {(sheet.status === 'COMPLETED' || sheet.isRetained) && (
+                                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] font-extrabold uppercase py-0 px-1.5 h-4">
+                                  Retained
+                                </Badge>
+                              )}
                             </div>
                           </td>
 
@@ -619,14 +817,18 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                             <div className="flex items-center gap-1.5">
                               <span className={cn(
                                 "w-2 h-2 rounded-full",
-                                custody.includes('QA – Reviewed') ? "bg-emerald-500" :
+                                custody.includes('QA – Reviewed') || custody.includes('QA Reconciled') ? "bg-emerald-500" :
                                 custody.includes('QA – Under Review') ? "bg-sky-500" :
                                 custody.includes('QA – Awaiting') ? "bg-purple-500" :
+                                custody.includes('Awaiting Return') ? "bg-rose-500" :
                                 custody.includes('Production') ? "bg-amber-500" :
                                 custody.includes('Printed') ? "bg-indigo-500" :
                                 "bg-slate-400"
                               )} />
-                              <span className="font-semibold text-slate-800">
+                              <span className={cn(
+                                "font-semibold",
+                                isDiscarded ? "text-rose-800" : "text-slate-800"
+                              )}>
                                 {custody}
                               </span>
                             </div>
@@ -634,7 +836,21 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
 
                           {/* Handover Status */}
                           <td className="py-3.5 px-4">
-                            {sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' ? (
+                            {isDiscarded ? (
+                              <div className="text-[11px]">
+                                {sheet.returnToQaStatus === 'RECEIVED_BACK_BY_QA' ? (
+                                  <Badge className="bg-purple-50 text-purple-700 border-purple-200 font-bold text-[10px]">
+                                    QA Reconciled
+                                  </Badge>
+                                ) : sheet.returnToQaStatus === 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT' ? (
+                                  <Badge className="bg-sky-50 text-sky-700 border-sky-200 font-bold text-[10px]">
+                                    Returned to QA
+                                  </Badge>
+                                ) : (
+                                  <span className="text-amber-700 font-bold">Production Paper</span>
+                                )}
+                              </div>
+                            ) : sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' ? (
                               <div>
                                 <span className="font-bold text-emerald-700 block">Handed Over</span>
                                 <span className="text-[10px] text-slate-400 block truncate max-w-[140px]">
@@ -648,7 +864,24 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
 
                           {/* Production Status */}
                           <td className="py-3.5 px-4">
-                            {sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION' ? (
+                            {isDiscarded ? (
+                              <div className="text-[11px]">
+                                {sheet.returnToQaStatus === 'RECEIVED_BACK_BY_QA' ? (
+                                  <span className="text-slate-500 font-medium">Reconciled</span>
+                                ) : sheet.returnToQaStatus === 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT' ? (
+                                  <div>
+                                    <span className="font-bold text-sky-700 block">Returned by Prod</span>
+                                    <span className="text-[10px] text-slate-400 truncate block max-w-[130px]">
+                                      {sheet.returnedToQaByName || 'Production'}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-rose-600 font-bold block">
+                                    Must Return to QA
+                                  </span>
+                                )}
+                              </div>
+                            ) : sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION' ? (
                               <div>
                                 <span className="font-bold text-amber-700 block">In Production</span>
                                 <span className="text-[10px] text-slate-400 block truncate max-w-[140px]">
@@ -664,7 +897,22 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
 
                           {/* QA Review Status */}
                           <td className="py-3.5 px-4">
-                            {sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED' ? (
+                            {isDiscarded ? (
+                              <div className="text-[11px]">
+                                {sheet.returnToQaStatus === 'RECEIVED_BACK_BY_QA' ? (
+                                  <div>
+                                    <span className="font-bold text-emerald-700 block">QA Received & Signed</span>
+                                    <span className="text-[10px] text-slate-400 truncate block max-w-[130px]">
+                                      {sheet.receivedBackByQaName || 'QA'}
+                                    </span>
+                                  </div>
+                                ) : sheet.returnToQaStatus === 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT' ? (
+                                  <span className="text-purple-600 font-bold">Awaiting QA Receipt</span>
+                                ) : (
+                                  <span className="text-slate-400 font-medium">Pending Prod Return</span>
+                                )}
+                              </div>
+                            ) : sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED' ? (
                               <div>
                                 <span className="font-bold text-emerald-700 block">Reviewed & Certified</span>
                                 <span className="text-[10px] text-slate-400 block truncate max-w-[140px]">
@@ -683,8 +931,36 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                           {/* Actions */}
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              {/* Row action: Return Blank Sheet to QA */}
+                              {isSheetEligibleForReturnToQa(sheet) && canProductionReturnDiscarded && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOpenOperation('RETURN_DISCARDED_TO_QA', sheet.id)}
+                                  className="h-7 px-2.5 text-[11px] bg-amber-50 text-amber-800 hover:bg-amber-100 border-amber-300 font-bold gap-1 shadow-sm"
+                                  title="Return this blank or unexecuted sheet back to QA custody"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  RETURN BLANK BATCH SHEET BACK TO QA
+                                </Button>
+                              )}
+
+                              {/* Row action: Receive Returned Sheet for QA */}
+                              {isSheetEligibleForQaReceiveReturned(sheet) && canQaReceiveDiscarded && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOpenOperation('RECEIVE_RETURNED_DISCARDED', sheet.id)}
+                                  className="h-7 px-2.5 text-[11px] bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border-indigo-300 font-bold gap-1 shadow-sm"
+                                  title="Acknowledge physical QA receipt of this returned sheet"
+                                >
+                                  <FileCheck2 className="w-3 h-3" />
+                                  RECEIVE RETURNED BATCH SHEET
+                                </Button>
+                              )}
+
                               {/* Row action: Handover to Production if eligible */}
-                              {canQAHandover && isSheetEligibleForHandover(sheet) && (
+                              {!isDiscarded && canQAHandover && isSheetEligibleForHandover(sheet) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -698,7 +974,7 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                               )}
 
                               {/* Row action: Production Accept Custody if handed over */}
-                              {canProductionReceive && isSheetEligibleForProductionReceive(sheet) && (
+                              {!isDiscarded && canProductionReceive && isSheetEligibleForProductionReceive(sheet) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -712,7 +988,7 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                               )}
 
                               {/* Row action: Send back for QA Review if in Production */}
-                              {canSendForQaReview && isSheetEligibleForQaReturn(sheet) && (
+                              {!isDiscarded && canSendForQaReview && isSheetEligibleForQaReturn(sheet) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -726,7 +1002,7 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                               )}
 
                               {/* Row action: QA Receive if submitted for review */}
-                              {canQaReceiveAndReview && isSheetEligibleForQaReceive(sheet) && (
+                              {!isDiscarded && canQaReceiveAndReview && isSheetEligibleForQaReceive(sheet) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -740,7 +1016,7 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                               )}
 
                               {/* Row action: QA Complete Review if received */}
-                              {canQaReceiveAndReview && isSheetEligibleForQaReviewComplete(sheet) && (
+                              {!isDiscarded && canQaReceiveAndReview && isSheetEligibleForQaReviewComplete(sheet) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -809,6 +1085,8 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
               {activeOperation === 'SEND_QA_REVIEW' && 'Submit Batch Sheets for QA Review'}
               {activeOperation === 'QA_RECEIVE' && 'QA Department Batch Sheet Receipt'}
               {activeOperation === 'COMPLETE_QA_REVIEW' && 'Certify QA Review for Selected Sheets'}
+              {activeOperation === 'RETURN_DISCARDED_TO_QA' && 'RETURN BLANK BATCH SHEET BACK TO QA'}
+              {activeOperation === 'RECEIVE_RETURNED_DISCARDED' && 'RECEIVE RETURNED BATCH SHEET'}
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
               This action modifies electronic batch custody records. All events are written immutably to the 21 CFR Part 11 audit trail.
@@ -832,6 +1110,38 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                 })}
               </div>
             </div>
+
+            {/* Discarded Return Confirmation Notice */}
+            {activeOperation === 'RETURN_DISCARDED_TO_QA' && (
+              <div className="space-y-2 bg-amber-50 p-4 rounded-2xl border border-amber-200 text-amber-900 text-xs">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <RotateCcw className="w-4 h-4 text-amber-700" />
+                  <span>Physical Handover Confirmation to QA</span>
+                </div>
+                <p className="text-amber-800 leading-relaxed">
+                  <strong>Discard Reason:</strong> Discarded due to Version Change
+                </p>
+                <p className="text-amber-700 text-[11px] leading-relaxed">
+                  I certify that the physical blank/printed batch sheets listed above are no longer active on the production floor and are being physically handed over back to Quality Assurance for physical reconciliation.
+                </p>
+              </div>
+            )}
+
+            {/* Discarded QA Receipt Confirmation Notice */}
+            {activeOperation === 'RECEIVE_RETURNED_DISCARDED' && (
+              <div className="space-y-2 bg-indigo-50 p-4 rounded-2xl border border-indigo-200 text-indigo-900 text-xs">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-indigo-700" />
+                  <span>Physical Paper Receipt Confirmation (QA Department)</span>
+                </div>
+                <p className="text-indigo-800 leading-relaxed">
+                  <strong>Discard Reason Verified:</strong> Discarded due to Version Change
+                </p>
+                <p className="text-indigo-700 text-[11px] leading-relaxed">
+                  I certify that Quality Assurance has physically received, verified sheet counts, and reconciled the returned blank/printed batch sheets in compliance with 21 CFR Part 11 and GMP guidelines.
+                </p>
+              </div>
+            )}
 
             {/* Gating Notices */}
             {activeOperation === 'PRODUCTION_RECEIVE' && (

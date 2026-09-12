@@ -56,7 +56,7 @@ import {
 import { LoadingPage } from '../components/LoadingSpinner';
 import { cn } from '../lib/utils';
 import { BatchIssuance, BatchSheetItem, PrintJobStatus, ProductMaster, getUserBaseRole } from '../types';
-import { initializeBatchSheetsClient, evaluateSheetEligibility } from '../lib/batch-sheets';
+import { initializeBatchSheetsClient, evaluateSheetEligibility, getBatchIssuedByString, getUserFullNameWithDesignation, getSheetPrintedByString } from '../lib/batch-sheets';
 import { SignatureDialog } from '../components/SignatureDialog';
 import { ReturnDialog, ReturnDialogConfirmPayload } from '../components/ReturnDialog';
 import { ReturnBadge } from '../components/ReturnBadge';
@@ -199,15 +199,25 @@ export default function BatchSheetRecordStatus() {
 
     const copyNum = (sheet.printCount || 0) + (isDirectPrint ? 1 : 0);
 
+    const sheetPrintedBy = isDirectPrint
+      ? getUserFullNameWithDesignation(user)
+      : getSheetPrintedByString(sheet, user, users);
+
     const url = await generateRequestPreviewPDF({
       batchNumber: sheet.batchNumber,
       dropdownBatchSeries: (batch as any).dropdownBatchSeries || '',
       singlePagesBatchNumber: sheet.batchNumber,
       issueDate: batch.createdAt || batch.manufacturingDate || new Date().toISOString(),
-      issuedBy: batch.issuedByName ? `${batch.issuedByRole || 'ADMIN'}(${batch.issuedByName})` : 'ADMIN(Akshay Sharma)',
+      issuedBy: getBatchIssuedByString(batch, users),
+      printedBy: sheetPrintedBy,
       master: masterSnapshot,
       product: product,
-      userInfo: user ? { name: user.displayName || user.username || user.email || 'Unknown', id: user.employeeId || 'N/A' } : undefined,
+      userInfo: user ? {
+        name: user.displayName || user.username || user.email || 'Unknown',
+        id: user.employeeId || 'N/A',
+        designation: user.designation || user.designationName || user.functionalRole,
+        role: user.role
+      } : undefined,
       requestType: (copyNum > 1 || batch.requestType === 'REPRINT') ? 'REPRINT' : 'NEW',
       printCounts: { [sheet.batchNumber]: copyNum },
       requestId: computedReqId,
@@ -555,6 +565,13 @@ export default function BatchSheetRecordStatus() {
             Rejected
           </Badge>
         );
+      case 'DISCARDED':
+        return (
+          <Badge className="bg-amber-100 text-amber-800 border-amber-200 rounded-full px-3 py-1 font-bold text-[10px] uppercase tracking-wider">
+            <XCircle className="w-3 h-3 mr-1" />
+            Discarded
+          </Badge>
+        );
       case 'ISSUED': {
         const sheets = issuance.batchSheets || [];
         const printedCount = sheets.filter(s => s.status === 'PRINTED' || s.status === 'REPRINTED').length;
@@ -624,10 +641,36 @@ export default function BatchSheetRecordStatus() {
     }
   };
 
-  const ongoingRequestsCount = issuances.filter(iss => iss.status !== 'COMPLETED' && iss.status !== 'REJECTED').length;
+  const isDiscardedRequest = (iss: BatchIssuance): boolean => {
+    if (!iss) return false;
+    const statusUpper = String(iss.status || '').toUpperCase();
+    const rejUpper = String(iss.rejectionReason || '').toUpperCase();
+    const discardUpper = String(iss.discardReason || '').toUpperCase();
+    return (
+      statusUpper === 'DISCARDED' ||
+      statusUpper.includes('DISCARD') ||
+      rejUpper.includes('DISCARD') ||
+      discardUpper.includes('DISCARD') ||
+      Boolean(iss.discardedAt) ||
+      Boolean(iss.discardReason)
+    );
+  };
+
+  const isOngoingRequest = (iss: BatchIssuance): boolean => {
+    if (!iss) return false;
+    if (iss.status === 'COMPLETED' || iss.status === 'REJECTED' || iss.status === 'CANCELLED') {
+      return false;
+    }
+    if (isDiscardedRequest(iss)) {
+      return false;
+    }
+    return true;
+  };
+
+  const ongoingRequestsCount = issuances.filter(isOngoingRequest).length;
 
   const filteredIssuances = issuances.filter(iss => {
-    if (iss.status === 'COMPLETED' || iss.status === 'REJECTED') return false;
+    if (!isOngoingRequest(iss)) return false;
     
     const product = products.find(p => p.id === iss.productId);
     const matchesSearch = 
@@ -1508,6 +1551,8 @@ export default function BatchSheetRecordStatus() {
                 fileUrl={previewPDFUrl}
                 onClose={() => setIsPreviewOpen(false)}
                 title={previewSheetLabel}
+                hideOverlays={true}
+                hideOverlayPanel={true}
               />
             )}
           </div>

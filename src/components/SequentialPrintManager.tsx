@@ -47,7 +47,7 @@ import api from '../services/api';
 import { BatchIssuance, BatchSheetItem, PrintJobStatus, ProductMaster, getUserBaseRole, BatchSheetPrintHistoryEntry, PrintJob } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { formatRequestId, generateRequestPreviewPDF } from '../lib/pdf-generator';
-import { initializeBatchSheetsClient, evaluateSheetEligibility } from '../lib/batch-sheets';
+import { initializeBatchSheetsClient, evaluateSheetEligibility, getBatchIssuedByString, getUserFullNameWithDesignation, getSheetPrintedByString } from '../lib/batch-sheets';
 import { parseAndValidatePageSelection, extractSelectedPagesPDF, getPDFPageCount } from '../lib/page-parser';
 import { SecurePDFViewer } from './SecurePDFViewer';
 import { cn } from '../lib/utils';
@@ -56,6 +56,7 @@ interface SequentialPrintManagerProps {
   batch: BatchIssuance;
   productMaster: ProductMaster | null;
   onBatchUpdated: () => Promise<void>;
+  users?: any[];
 }
 
 const ISSUE_REASONS = [
@@ -74,7 +75,8 @@ const ISSUE_REASONS = [
 export function SequentialPrintManager({
   batch,
   productMaster,
-  onBatchUpdated
+  onBatchUpdated,
+  users
 }: SequentialPrintManagerProps) {
   const { user } = useAuth();
   const sheets: BatchSheetItem[] = initializeBatchSheetsClient(batch);
@@ -155,15 +157,28 @@ export function SequentialPrintManager({
 
     const copyNum = (sheet.printCount || 0) + (isDirectPrint ? 1 : 0);
 
+    // If isDirectPrint is true, user is pressing the Print/Reprint button for this particular sheet.
+    // Printed By MUST be the Full Name(Designation) of the user who presses the Print button.
+    // If previewing, display who printed that sheet, or current user if not yet printed.
+    const sheetPrintedBy = isDirectPrint
+      ? getUserFullNameWithDesignation(user)
+      : getSheetPrintedByString(sheet, user, users);
+
     const url = await generateRequestPreviewPDF({
       batchNumber: sheet.batchNumber,
       dropdownBatchSeries: (batch as any).dropdownBatchSeries || '',
       singlePagesBatchNumber: sheet.batchNumber,
       issueDate: batch.createdAt || batch.manufacturingDate || new Date().toISOString(),
-      issuedBy: batch.issuedByName ? `${batch.issuedByRole || 'ADMIN'}(${batch.issuedByName})` : 'ADMIN(Akshay Sharma)',
+      issuedBy: getBatchIssuedByString(batch, users),
+      printedBy: sheetPrintedBy,
       master: masterSnapshot,
       product: productMaster,
-      userInfo: user ? { name: user.displayName || user.username || user.email || 'Unknown', id: user.employeeId || 'N/A' } : undefined,
+      userInfo: user ? {
+        name: user.displayName || user.username || user.email || 'Unknown',
+        id: user.employeeId || 'N/A',
+        designation: user.designation || user.designationName || user.functionalRole,
+        role: user.role
+      } : undefined,
       requestType: (copyNum > 1 || batch.requestType === 'REPRINT') ? 'REPRINT' : 'NEW',
       printCounts: { [sheet.batchNumber]: copyNum },
       requestId: computedReqId,
@@ -683,7 +698,7 @@ export function SequentialPrintManager({
                       className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs h-9 px-3"
                     >
                       <History className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
-                      Audit ({sheet.history?.length || 0})
+                      Audit
                     </Button>
 
                     {/* Print / Confirmation Action Buttons */}

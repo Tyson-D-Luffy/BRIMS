@@ -434,4 +434,44 @@ export class BatchController {
       res.status(400).json({ success: false, message: error.message });
     }
   }
+
+  static async returnDiscardedSheetsToQa(req: AuthRequest, res: Response) {
+    try {
+      const batch = await BatchIssuanceService.getBatchById(req.params.id);
+      if (batch && !hasBranchAccess(req, (batch as any).branch)) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const { sheetIds, changeReason, meaning } = req.body;
+      const result = await BatchIssuanceService.returnDiscardedSheetsToQa(
+        req.params.id,
+        sheetIds,
+        changeReason,
+        req.user,
+        { ...req.metadata, meaning }
+      );
+      res.json({ success: true, data: result, message: "Discarded Batch Sheet(s) returned to QA" });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async receiveReturnedDiscardedSheets(req: AuthRequest, res: Response) {
+    try {
+      const batch = await BatchIssuanceService.getBatchById(req.params.id);
+      if (batch && !hasBranchAccess(req, (batch as any).branch)) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const { sheetIds, changeReason, meaning } = req.body;
+      const result = await BatchIssuanceService.receiveReturnedDiscardedSheets(
+        req.params.id,
+        sheetIds,
+        changeReason,
+        req.user,
+        { ...req.metadata, meaning }
+      );
+      res.json({ success: true, data: result, message: "Returned Discarded Batch Sheet(s) received by QA" });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
 }

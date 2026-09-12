@@ -29,14 +29,14 @@ router.post(
 router.get(
   "/", 
   authenticateToken, 
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]), 
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]), 
   BatchSheetMasterController.getAll
 );
 
 router.get(
   "/:id", 
   authenticateToken, 
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]), 
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]), 
   BatchSheetMasterController.getById
 );
 
@@ -66,6 +66,14 @@ router.post(
   enforceSignature("I certify that I am discontinuing this master record. This action is intentional and logged."),
   validate(newRecordSchema),
   BatchSheetMasterController.retire
+);
+
+// Check active issuance impact before requesting update
+router.get(
+  "/:id/active-issuance-impact",
+  authenticateToken,
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]),
+  BatchSheetMasterController.getActiveIssuanceImpact
 );
 
 // Request update for approved/rejected master
@@ -151,7 +159,7 @@ router.patch(
 router.get(
   "/:id/check-lock", 
   authenticateToken, 
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]), 
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]), 
   BatchSheetMasterController.checkLock
 );
 

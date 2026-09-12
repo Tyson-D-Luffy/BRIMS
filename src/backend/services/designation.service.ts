@@ -88,8 +88,8 @@ export class DesignationService {
     }
 
     // Role division checking
-    const userRole = (user?.role || "OPERATOR").toUpperCase();
-    const isQAorAdmin = userRole === "ADMIN" || userRole === "QA" || userRole === "QA REVIEWER" || userRole === "QA APPROVER";
+    const userRole = (user?.role || "PRODUCTION_INCHARGE").toUpperCase();
+    const isQAorAdmin = userRole === "ADMIN" || userRole.includes("QA");
     
     if (!isQAorAdmin) {
       // Normal User: check alignment with own department
@@ -225,8 +225,8 @@ export class DesignationService {
 
     // Role division validation on update as well
     const department = await DepartmentService.getDepartmentById(existing.departmentId);
-    const userRole = (user?.role || "OPERATOR").toUpperCase();
-    const isQAorAdmin = userRole === "ADMIN" || userRole === "QA" || userRole === "QA REVIEWER" || userRole === "QA APPROVER";
+    const userRole = (user?.role || "PRODUCTION_INCHARGE").toUpperCase();
+    const isQAorAdmin = userRole === "ADMIN" || userRole.includes("QA");
     
     if (!isQAorAdmin) {
       const userDept = user?.department?.trim().toUpperCase();

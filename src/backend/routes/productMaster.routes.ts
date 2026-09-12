@@ -70,8 +70,8 @@ router.post(
 );
 
 // Viewers access standard queries
-router.get("/", authenticateToken, authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"]), ProductMasterController.getAll);
-router.get("/masters", authenticateToken, authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"]), ProductMasterController.getWithMasters);
-router.get("/:id", authenticateToken, authorizeRoles(["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"]), ProductMasterController.getById);
+router.get("/", authenticateToken, authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]), ProductMasterController.getAll);
+router.get("/masters", authenticateToken, authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]), ProductMasterController.getWithMasters);
+router.get("/:id", authenticateToken, authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]), ProductMasterController.getById);
 
 export default router;

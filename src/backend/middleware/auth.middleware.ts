@@ -194,7 +194,7 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
 
     activityCache.set(decodedToken.uid, now);
 
-    let role = "OPERATOR";
+    let role = "PRODUCTION_INCHARGE";
     let allowedBranches: string[] = ["Masulkhana"];
     let defaultBranch = "Masulkhana";
     let multiBranchAccess = false;
@@ -236,7 +236,7 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
         const userDoc = await getDoc(doc(db, "users", decodedToken.uid));
         if (userDoc.exists()) {
           const data = userDoc.data();
-          role = data?.functionalRole || data?.role || (isSystemAdmin ? "ADMIN" : "OPERATOR");
+          role = data?.functionalRole || data?.role || (isSystemAdmin ? "ADMIN" : "PRODUCTION_INCHARGE");
           allowedBranches = data?.allowedBranches || (isSystemAdmin ? ["Masulkhana", "Baddi"] : ["Masulkhana"]);
           defaultBranch = data?.defaultBranch || "Masulkhana";
           multiBranchAccess = data?.multiBranchAccess !== undefined ? !!data?.multiBranchAccess : (isSystemAdmin ? true : false);
@@ -291,7 +291,7 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
         }
       } catch (error) {
         const isSystemAdmin = decodedToken.email && decodedToken.email.toLowerCase() === 'shakshay04@gmail.com';
-        role = isSystemAdmin ? "ADMIN" : "OPERATOR";
+        role = isSystemAdmin ? "ADMIN" : "PRODUCTION_INCHARGE";
         if (role === "ADMIN") {
           allowedBranches = ["Masulkhana", "Baddi"];
           defaultBranch = "Masulkhana";

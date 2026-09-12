@@ -12,7 +12,7 @@ const router = Router();
 router.post(
   "/:id/records",
   authenticateToken,
-  authorizeRoles(["ADMIN", "QA"]),
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER"]),
   validate(createRecordSchema),
   BatchSheetRecordController.create
 );
@@ -20,21 +20,21 @@ router.post(
 router.get(
   "/",
   authenticateToken,
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA"]),
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]),
   BatchSheetRecordController.getAll
 );
 
 router.get(
   "/:id/records",
   authenticateToken,
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]),
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]),
   BatchSheetRecordController.getByMasterId
 );
 
 router.get(
   "/:id/records/latest-approved",
   authenticateToken,
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]),
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]),
   BatchSheetRecordController.getLatestApproved
 );
 
@@ -42,14 +42,14 @@ router.get(
 router.get(
   "/:id",
   authenticateToken,
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]),
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]),
   BatchSheetRecordController.getById
 );
 
 router.put(
   "/:id",
   authenticateToken,
-  authorizeRoles(["ADMIN", "QA"]),
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER"]),
   authorizeWorkflowTransition("BATCH_SHEET_RECORD", "edit"),
   enforceLock("batch_sheet_records"),
   validate(updateRecordSchema),
@@ -59,7 +59,7 @@ router.put(
 router.get(
   "/:id/check-lock",
   authenticateToken,
-  authorizeRoles(["ADMIN", "PRODUCTION_MANAGER", "QA", "OPERATOR"]),
+  authorizeRoles(["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"]),
   BatchSheetRecordController.checkLock
 );
 

@@ -30,6 +30,7 @@ import {
 import { LoadingPage } from '../components/LoadingSpinner';
 import { cn } from '../lib/utils';
 import { HighlightText } from '../components/HighlightText';
+import { getUserBaseRole } from '../types';
 
 export default function BatchSheetRecordsApprovals() {
   const navigate = useNavigate();
@@ -98,9 +99,10 @@ export default function BatchSheetRecordsApprovals() {
 
   if (loading) return <LoadingPage label="Scanning for pending approvals..." />;
 
-  const isProduction = user?.role === 'PRODUCTION_MANAGER';
-  const isQA = user?.role === 'QA';
-  const isAdmin = user?.role === 'ADMIN';
+  const baseRole = user ? getUserBaseRole(user) : '';
+  const isProduction = ['PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER', 'OPERATOR'].includes(baseRole);
+  const isQA = ['QA_CHEMIST', 'QA_INCHARGE', 'QA_MANAGER', 'QA'].includes(baseRole);
+  const isAdmin = baseRole === 'ADMIN';
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-700">

@@ -65,18 +65,32 @@ export function getEquivalentBackendRoles(userRole: string): string[] {
   const normalized = role.toUpperCase().replace(/_/g, " ");
   
   if (normalized.includes("ADMIN") || normalized.includes("SYSTEM") || normalized.includes("IT")) {
-    return ["ADMIN", "QA", "PRODUCTION_MANAGER", "OPERATOR"];
+    return ["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"];
   }
-  
-  if (normalized.includes("QA") || normalized.includes("QC") || normalized.includes("QUALITY") || normalized.includes("CONTROL") || normalized.includes("AUDIT")) {
-    return ["QA", "OPERATOR"];
+
+  if (normalized.includes("QA MANAGER") || normalized.includes("QUALITY ASSURANCE MANAGER") || normalized.includes("HEAD QA") || normalized.includes("QA HEAD") || normalized.includes("VP QA")) {
+    return ["QA_MANAGER", "QA_INCHARGE", "QA_CHEMIST"];
   }
-  
-  if (normalized.includes("PRODUCTION") || normalized.includes("MANAGER") || normalized.includes("HEAD") || normalized.includes("SUPERVISOR") || normalized.includes("INCHARGE") || normalized.includes("CHIEF") || normalized.includes("DIRECTOR") || normalized.includes("LEAD")) {
-    return ["PRODUCTION_MANAGER", "OPERATOR"];
+
+  if (normalized.includes("QA INCHARGE") || normalized.includes("QA IN-CHARGE") || normalized.includes("QA SUPERVISOR") || normalized.includes("QA LEAD")) {
+    return ["QA_INCHARGE", "QA_CHEMIST"];
   }
-  
-  return ["OPERATOR"];
+
+  if (normalized.includes("QA CHEMIST") || normalized.includes("CHEMIST") || normalized.includes("ANALYST")) {
+    return ["QA_CHEMIST"];
+  }
+
+  if (normalized.includes("PRODUCTION INCHARGE") || normalized.includes("PRODUCTION IN-CHARGE") || normalized.includes("PRODUCTION") || normalized.includes("MANUFACTURING") || normalized.includes("OPERATOR")) {
+    return ["PRODUCTION_INCHARGE"];
+  }
+
+  // Generalized QA fallback
+  if (normalized.includes("QA") || normalized.includes("QC") || normalized.includes("QUALITY")) {
+    return ["QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER"];
+  }
+
+  // Default designation fallback
+  return ["PRODUCTION_INCHARGE"];
 }
 
 export function hasRoleAccess(userRole: string, allowedRoles: string[]): boolean {
@@ -85,10 +99,17 @@ export function hasRoleAccess(userRole: string, allowedRoles: string[]): boolean
   const equivalentBackendRoles = getEquivalentBackendRoles(userRole);
   
   return allowedRoles.some(allowedRole => {
-    const allowedUpper = allowedRole.toUpperCase();
+    const allowedUpper = allowedRole.toUpperCase().replace(/_/g, " ");
+    const allowedKey = allowedRole.toUpperCase().replace(/\s+/g, "_");
+    const userUpper = userRole.toUpperCase().replace(/_/g, " ");
+    const userKey = userRole.toUpperCase().replace(/\s+/g, "_");
+    
     return (
       userRole === allowedRole ||
-      userRole.toUpperCase() === allowedUpper ||
+      userUpper === allowedUpper ||
+      userKey === allowedKey ||
+      equivalentBackendRoles.includes(allowedRole) ||
+      equivalentBackendRoles.includes(allowedKey) ||
       equivalentBackendRoles.includes(allowedUpper)
     );
   });

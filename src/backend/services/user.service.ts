@@ -620,4 +620,44 @@ export class UserService {
       metadata?.userAgent
     );
   }
+
+  static async runEmployeeIdMigration() {
+    try {
+      await ensureAuth();
+      const usersRef = collection(db, "users");
+      const querySnapshot = await getDocs(usersRef);
+      const existingIds = new Set<string>();
+
+      querySnapshot.forEach(docSnap => {
+        const id = docSnap.data().employeeId;
+        if (id) {
+          existingIds.add(String(id).trim());
+        }
+      });
+
+      let count = 101;
+      for (const docSnap of querySnapshot.docs) {
+        const data = docSnap.data();
+        if (!data.employeeId) {
+          let generatedId = `EMP${String(count).padStart(5, '0')}`;
+          while (existingIds.has(generatedId)) {
+            count++;
+            generatedId = `EMP${String(count).padStart(5, '0')}`;
+          }
+          existingIds.add(generatedId);
+          count++;
+
+          const userDocRef = doc(db, "users", docSnap.id);
+          await updateDoc(userDocRef, {
+            employeeId: generatedId,
+            updatedAt: new Date().toISOString()
+          });
+          console.log(`[MIGRATION-CLIENT] Migrated user ${data.email || docSnap.id} to Employee ID: ${generatedId}`);
+        }
+      }
+      console.log("BRIMS User Employee ID automatic migration completed successfully via Client SDK.");
+    } catch (e: any) {
+      console.warn("Client SDK migration notice:", e.message);
+    }
+  }
 }

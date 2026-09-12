@@ -46,6 +46,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '../lib/utils';
 import { generateBatchPDF, generateRequestPreviewPDF, formatRequestId } from '../lib/pdf-generator';
+import { getBatchIssuedByString, getUserFullNameWithDesignation } from '../lib/batch-sheets';
 import { SecurePDFViewer } from '../components/SecurePDFViewer';
 import { Loader2 } from 'lucide-react';
 import { LoadingPage } from '../components/LoadingSpinner';
@@ -103,10 +104,16 @@ export default function BatchDetail() {
         dropdownBatchSeries: (batch as any).dropdownBatchSeries || '',
         singlePagesBatchNumber: (batch as any).singlePagesBatchNumber,
         issueDate: batch.createdAt || batch.manufacturingDate || new Date().toISOString(),
-        issuedBy: batch.issuedByName ? `${batch.issuedByRole || 'ADMIN'}(${batch.issuedByName})` : 'ADMIN(Akshay Sharma)',
+        issuedBy: getBatchIssuedByString(batch, users, timeline),
+        printedBy: getUserFullNameWithDesignation(user),
         master: masterSnapshot,
         product: productMaster,
-        userInfo: user ? { name: user.displayName || user.username || user.email || 'Unknown', id: user.employeeId || 'N/A' } : undefined,
+        userInfo: user ? {
+          name: user.displayName || user.username || user.email || 'Unknown',
+          id: user.employeeId || 'N/A',
+          designation: user.designation || user.designationName || user.functionalRole,
+          role: user.role
+        } : undefined,
         requestType: batch.requestType,
         printCounts: batch.printCounts,
         requestId: computedReqId,
@@ -225,10 +232,16 @@ export default function BatchDetail() {
             batchNumber: batch.batchNumberSeries || batch.batchNumber,
             dropdownBatchSeries: (batch as any).dropdownBatchSeries || '',
             issueDate: batch.createdAt || batch.manufacturingDate || new Date().toISOString(),
-            issuedBy: batch.issuedByName ? `${batch.issuedByRole || 'ADMIN'}(${batch.issuedByName})` : 'ADMIN(Akshay Sharma)',
+            issuedBy: getBatchIssuedByString(batch, users, timeline),
+            printedBy: getUserFullNameWithDesignation(user),
             master: masterSnapshot,
             product: productMaster,
-            userInfo: user ? { name: user.displayName || user.username || user.email || 'Unknown', id: user.employeeId || 'N/A' } : undefined,
+            userInfo: user ? {
+              name: user.displayName || user.username || user.email || 'Unknown',
+              id: user.employeeId || 'N/A',
+              designation: user.designation || user.designationName || user.functionalRole,
+              role: user.role
+            } : undefined,
             requestType: batch.requestType,
             printCounts: batch.printCounts,
             requestId: computedReqId,
@@ -707,7 +720,7 @@ export default function BatchDetail() {
             </Button>
           )}
 
-          {batch.status === 'HANDED_OVER' && (user?.permissions?.includes('batch:sign') || user?.permissions?.includes('batch:create') || user?.permissions?.includes('op:production_in_progress') || getUserBaseRole(user) === 'ADMIN' || getUserBaseRole(user) === 'PRODUCTION_MANAGER' || getUserBaseRole(user) === 'OPERATOR') && (
+          {batch.status === 'HANDED_OVER' && (user?.permissions?.includes('batch:sign') || user?.permissions?.includes('batch:create') || user?.permissions?.includes('op:production_in_progress') || ['ADMIN', 'PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER', 'OPERATOR'].includes(getUserBaseRole(user))) && (
             <Button 
               onClick={handleProductionReceived}
               disabled={updatingStatus}
@@ -724,7 +737,7 @@ export default function BatchDetail() {
 
           {((batch.status === 'PRODUCTION_IN_PROGRESS') ||
             (['READY_FOR_PRODUCTION_HANDOVER', 'HANDED_OVER'].includes(batch.status) && (batch.batchSheets || []).some(s => (s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' || s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') && s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW' && s.qaReviewStatus !== 'QA_REVIEW_COMPLETED'))) && 
-           (user?.permissions?.includes('batch:sign') || user?.permissions?.includes('batch:edit') || user?.permissions?.includes('op:ready_for_qa_review') || user?.permissions?.includes('op:production_in_progress') || getUserBaseRole(user) === 'ADMIN' || getUserBaseRole(user) === 'PRODUCTION_MANAGER' || getUserBaseRole(user) === 'OPERATOR') && (
+           (user?.permissions?.includes('batch:sign') || user?.permissions?.includes('batch:edit') || user?.permissions?.includes('op:ready_for_qa_review') || user?.permissions?.includes('op:production_in_progress') || ['ADMIN', 'PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER', 'OPERATOR'].includes(getUserBaseRole(user))) && (
             <Button 
               onClick={handleBatchSheetFilled}
               disabled={updatingStatus}
@@ -865,7 +878,7 @@ export default function BatchDetail() {
                   <Label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Issued By</Label>
                   <div className="flex items-center gap-2 text-slate-900 font-bold text-sm bg-slate-50 px-3 py-2.5 rounded-xl border border-slate-100 max-w-sm">
                     <UserCheck className="w-4 h-4 text-slate-400" />
-                    <span>{batch.issuedByName || 'Akshay Sharma'}</span>
+                    <span>{getBatchIssuedByString(batch, users, timeline)}</span>
                   </div>
                 </div>
 
@@ -897,6 +910,7 @@ export default function BatchDetail() {
                 batch={batch}
                 productMaster={productMaster}
                 onBatchUpdated={fetchData}
+                users={users}
               />
             </div>
           )}
@@ -1395,10 +1409,10 @@ export default function BatchDetail() {
           batchNo={batch.batchNumberSeries || batch.batchNumber}
           dropdownBatchSeries={(batch as any).dropdownBatchSeries}
           singlePagesBatchNumber={(batch as any).singlePagesBatchNumber}
-          issuedBy={batch.issuedByName ? `${batch.issuedByRole || 'ADMIN'} (${batch.issuedByName})` : 'ADMIN (Akshay Sharma)'}
+          issuedBy={getBatchIssuedByString(batch, users, timeline)}
           dateOfIssue={batch.createdAt || batch.manufacturingDate}
           timeOfIssue={batch.createdAt || batch.manufacturingDate}
-          printedBy={user ? `${user.displayName || user.username || 'Unknown'} (${user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase() : 'Admin'})` : 'Akshay Sharma (Admin)'}
+          printedBy={getUserFullNameWithDesignation(user)}
           printedDateTime={new Date().toISOString()}
           requestId={formatRequestId(
             batch.batchNumberSeries || batch.batchNumber,

@@ -92,12 +92,12 @@ export class AuthController {
       const userDoc = await getDoc(userRef);
       console.log(`AuthController.login: User document exists: ${userDoc.exists()}`);
       
-      let role: UserRole = "OPERATOR";
+      let role: UserRole = "PRODUCTION_INCHARGE";
       const isSystemAdmin = email && email.toLowerCase() === 'shakshay04@gmail.com';
       if (isSystemAdmin) {
         role = "ADMIN";
       } else if (userDoc.exists()) {
-        role = userDoc.data()?.role || "OPERATOR";
+        role = userDoc.data()?.role || "PRODUCTION_INCHARGE";
       }
 
       // Always ensure the user document exists and has the correct role and full permissions for the admin
@@ -410,7 +410,7 @@ export class AuthController {
         }
       }
 
-      const userFunctionalRole = userData.functionalRole || userData.role || (email.toLowerCase() === 'shakshay04@gmail.com' ? 'ADMIN' : 'OPERATOR');
+      const userFunctionalRole = userData.functionalRole || userData.role || (email.toLowerCase() === 'shakshay04@gmail.com' ? 'ADMIN' : 'PRODUCTION_INCHARGE');
 
       // 5. Audit Log Success
       try {

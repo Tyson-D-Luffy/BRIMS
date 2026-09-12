@@ -176,8 +176,8 @@ export class AuditService {
       }
     }
 
-    // Fallback lookup by userEmail if finalRole is empty or default OPERATOR (skip inside transaction to prevent transaction conflict)
-    if (!transaction && (!finalRole || finalRole === 'OPERATOR') && userEmail && userEmail !== 'system@internal') {
+    // Fallback lookup by userEmail if finalRole is empty or default PRODUCTION_INCHARGE (skip inside transaction to prevent transaction conflict)
+    if (!transaction && (!finalRole || finalRole === 'PRODUCTION_INCHARGE' || finalRole === 'OPERATOR') && userEmail && userEmail !== 'system@internal') {
       try {
         const q = query(collection(db, "users"), where("email", "==", userEmail));
         const snap = await getDocs(q);
@@ -523,7 +523,7 @@ export class AuditService {
           userId: data.userId || "system",
           userEmail: data.userEmail || "system@internal",
           userName: data.userName || (data.userEmail ? data.userEmail.split('@')[0] : "System"),
-          role: data.role || "OPERATOR",
+          role: data.role || "PRODUCTION_INCHARGE",
           branch: data.selectedBranch || "Masulkhana",
           selectedBranch: data.selectedBranch || "Masulkhana",
           affectedRecordBranch: data.affectedRecordBranch || data.selectedBranch || "Masulkhana",
@@ -612,8 +612,8 @@ export class AuditService {
           let targetRole = userRoleMap.get(uId) || userRoleMap.get(uEmail);
           if (!targetRole) {
             if (uEmail === 'shakshay04@gmail.com') targetRole = 'ADMIN';
-            else if (data.role && data.role !== 'OPERATOR' && data.role !== 'USER') targetRole = data.role;
-            else targetRole = (colName === "system_admin_audit_logs") ? 'ADMIN' : 'USER';
+            else if (data.role && data.role !== 'OPERATOR' && data.role !== 'USER' && data.role !== 'PRODUCTION_INCHARGE') targetRole = data.role;
+            else targetRole = (colName === "system_admin_audit_logs") ? 'ADMIN' : 'PRODUCTION_INCHARGE';
           }
 
           if (data.role !== targetRole || data.functionalRole !== targetRole) {

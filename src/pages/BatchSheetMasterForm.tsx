@@ -649,15 +649,28 @@ export default function BatchSheetMasterForm() {
                   name="version"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-slate-600">Version *</FormLabel>
+                      <div className="flex items-center justify-between">
+                        <FormLabel className="text-slate-600">Version *</FormLabel>
+                        {isEdit && (
+                          <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                            System Calculated (Locked)
+                          </span>
+                        )}
+                      </div>
                       <FormControl>
                         <Input 
                           placeholder="1.0" 
                           {...field} 
-                          disabled={isLocked}
-                          className="h-12 rounded-xl bg-slate-50 border-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-70" 
+                          disabled={isLocked || isEdit}
+                          readOnly={isEdit}
+                          className="h-12 rounded-xl bg-slate-50 border-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-70 font-mono font-bold" 
                         />
                       </FormControl>
+                      {isEdit && (
+                        <FormDescription className="text-xs text-slate-400">
+                          Version is automatically incremented per GAMP 5 lifecycle rules and cannot be manually modified.
+                        </FormDescription>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

@@ -18,25 +18,17 @@ const VALID_DEPARTMENTS = [
 ] as const;
 
 const VALID_ROLES = [
-  "Admin",
-  "QA Reviewer",
-  "QA Approver",
-  "Production User",
-  "Warehouse User",
-  "Viewer",
-  "Master Data User",
-  "Manager",
-  "Issuer",
-  "Requestor",
-  "Receiver",
-  "MANAGER",
-  "ISSUER",
-  "REQUESTOR",
-  "RECEIVER",
   "ADMIN",
-  "QA",
-  "PRODUCTION_MANAGER",
-  "OPERATOR"
+  "QA_CHEMIST",
+  "QA_INCHARGE",
+  "QA_MANAGER",
+  "PRODUCTION_INCHARGE",
+  "Admin",
+  "IT ADMIN",
+  "QA Chemist",
+  "QA Incharge",
+  "QA Manager",
+  "Production Incharge"
 ] as const;
 
 export const userSchema = z.object({

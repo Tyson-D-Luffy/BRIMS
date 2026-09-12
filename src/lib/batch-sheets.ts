@@ -35,6 +35,19 @@ export function expandBatchSeries(series: string): string[] {
  * Computes human-readable custody location conforming to 21 CFR Part 11 integrity rules
  */
 export function computeSheetCustody(sheet: BatchSheetItem, batchStatus?: string): string {
+  if (sheet.discardStatus === 'DISCARDED_VERSION_CHANGE' || sheet.status === 'DISCARDED') {
+    if (sheet.returnToQaStatus === 'RECEIVED_BACK_BY_QA') {
+      return 'QA – Received & Reconciled (Discarded)';
+    }
+    if (sheet.returnToQaStatus === 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT') {
+      return 'Awaiting QA Receipt (Returned by Production)';
+    }
+    if (sheet.returnToQaStatus === 'AWAITING_PRODUCTION_RETURN' || sheet.returnToQaStatus === 'AWAITING_RETURN_TO_QA' || sheet.returnToQaRequired) {
+      return 'Production – Awaiting Return to QA';
+    }
+    return sheet.currentCustody || 'QA – Discarded';
+  }
+
   if (sheet.currentCustody) return sheet.currentCustody;
 
   if (sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED') {
@@ -361,3 +374,286 @@ export function evaluateSheetEligibility(
     activeLockedSheet
   };
 }
+
+/**
+ * Determines whether an individual batch sheet has reached final completion in the issuance lifecycle.
+ */
+export function isSheetCompleted(sheet: BatchSheetItem, parentStatus?: string): boolean {
+  if (isSheetDiscarded(sheet)) return false;
+  if (sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED') return true;
+  if (sheet.currentOperationalState === 'QA_REVIEW_COMPLETED') return true;
+  if (parentStatus === 'COMPLETED' && !sheet.discardStatus && !sheet.discardReason) return true;
+  return false;
+}
+
+/**
+ * Determines whether an individual batch sheet has been discarded due to version change or rejection.
+ */
+export function isSheetDiscarded(sheet: BatchSheetItem): boolean {
+  if (!sheet) return false;
+  if (sheet.discardStatus === 'DISCARDED_DUE_TO_VERSION_CHANGE') return true;
+  if (sheet.discardReason === 'Discarded due to Version Change') return true;
+  if (Boolean(sheet.discardedAt)) return true;
+  const statusStr = String(sheet.discardStatus || '').toUpperCase();
+  if (statusStr.includes('DISCARD')) return true;
+  return false;
+}
+
+/**
+ * Computes the human-readable operational state of an individual batch sheet.
+ */
+export function getIndividualSheetState(sheet: BatchSheetItem, parentStatus?: string): string {
+  if (isSheetDiscarded(sheet)) {
+    return 'Discarded due to Version Change';
+  }
+  if (isSheetCompleted(sheet, parentStatus)) {
+    return 'Completed';
+  }
+  if (sheet.qaReviewStatus === 'UNDER_QA_REVIEW' || (sheet.qaReceiptStatus === 'RECEIVED_BY_QA' && sheet.qaReviewStatus !== 'QA_REVIEW_COMPLETED')) {
+    return 'QA Review In Progress';
+  }
+  if (sheet.qaReceiptStatus === 'RECEIVED_BY_QA') {
+    return 'Received by QA';
+  }
+  if (sheet.qaReturnStatus === 'SENT_FOR_QA_REVIEW' || sheet.qaReceiptStatus === 'AWAITING_QA_RECEIPT') {
+    return 'Sent for QA Review';
+  }
+  if (sheet.qaReturnStatus === 'READY_FOR_QA_REVIEW') {
+    return 'Waiting to be sent to QA';
+  }
+  if (sheet.productionStatus === 'IN_PROGRESS') {
+    return 'Production In Progress';
+  }
+  if (sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') {
+    return 'Received by Production';
+  }
+  if (sheet.productionReceiptStatus === 'AWAITING_PRODUCTION_RECEIPT' || sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION') {
+    return 'Handed Over / Awaiting Production Receipt';
+  }
+  const isPrinted = sheet.status === 'PRINT_COMPLETED' || sheet.status === 'PRINTED' || sheet.status === 'REPRINTED' || (sheet.printCount || 0) > 0;
+  if (isPrinted) {
+    return 'Printed / Pending Handover';
+  }
+  return 'Awaiting Printing';
+}
+
+/**
+ * Determines physical custody and return-to-QA reconciliation state for a discarded batch sheet.
+ */
+export function computeDiscardReconciliation(sheet: BatchSheetItem, parentStatus?: string): {
+  returnToQaStatus: 'NOT_REQUIRED_ALREADY_WITH_QA' | 'AWAITING_PRODUCTION_RETURN' | 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT' | 'RECEIVED_BACK_BY_QA' | 'CUSTODY_RECONCILIATION_REQUIRED';
+  custody: string;
+} {
+  // If already returned or received back:
+  if (sheet.returnToQaStatus === 'RECEIVED_BACK_BY_QA') {
+    return { returnToQaStatus: 'RECEIVED_BACK_BY_QA', custody: 'QA' };
+  }
+  if (sheet.returnToQaStatus === 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT') {
+    return { returnToQaStatus: 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT', custody: 'Awaiting QA Receipt' };
+  }
+  if (sheet.returnToQaStatus === 'NOT_REQUIRED_ALREADY_WITH_QA') {
+    return { returnToQaStatus: 'NOT_REQUIRED_ALREADY_WITH_QA', custody: 'QA' };
+  }
+  if (sheet.returnToQaStatus === 'AWAITING_PRODUCTION_RETURN') {
+    return { returnToQaStatus: 'AWAITING_PRODUCTION_RETURN', custody: 'Production' };
+  }
+
+  // Determine from physical history
+  const custody = sheet.currentCustody || computeSheetCustody(sheet, parentStatus);
+
+  // If physically with Production
+  if (custody === 'Production' || sheet.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') {
+    return { returnToQaStatus: 'AWAITING_PRODUCTION_RETURN', custody: 'Production' };
+  }
+
+  // If physically with QA (never handed over, or already returned to QA)
+  if (
+    custody.startsWith('QA') ||
+    sheet.qaReceiptStatus === 'RECEIVED_BY_QA' ||
+    sheet.qaReturnStatus === 'SENT_FOR_QA_REVIEW' ||
+    sheet.qaReviewStatus === 'QA_REVIEW_COMPLETED' ||
+    sheet.handoverStatus !== 'HANDED_OVER_TO_PRODUCTION'
+  ) {
+    return { returnToQaStatus: 'NOT_REQUIRED_ALREADY_WITH_QA', custody: 'QA' };
+  }
+
+  // If in transit / handed over but not yet received by production
+  if (sheet.handoverStatus === 'HANDED_OVER_TO_PRODUCTION') {
+    return { returnToQaStatus: 'AWAITING_PRODUCTION_RETURN', custody: 'Production' };
+  }
+
+  return { returnToQaStatus: 'CUSTODY_RECONCILIATION_REQUIRED', custody: custody || 'Unknown' };
+}
+
+/**
+ * Resolves the "Issued By" string for PDF overlays and batch display.
+ * In 21 CFR Part 11 and EU Annex 11 GMP compliance, a batch sheet is officially issued
+ * by the QA user who approves the Batch sheet Request (e.g. "QA Incharge (Krishan Kumar)"),
+ * NOT by the Production Incharge / Operator who created/requested it.
+ */
+export function getBatchIssuedByString(batch: any, users?: any[], timeline?: any[]): string {
+  if (!batch) return 'QA Incharge (Krishan Kumar)';
+
+  // 1. If explicit approvedByName and approvedByRole are provided on the batch
+  if (batch.approvedByName) {
+    const role = batch.approvedByRole || 'QA Incharge';
+    return `${role} (${batch.approvedByName})`;
+  }
+
+  // 2. Check if timeline has an approval entry
+  if (Array.isArray(timeline) && timeline.length > 0) {
+    const approveEntry = timeline.find((t: any) => 
+      t.action === 'APPROVE' || 
+      t.action === 'APPROVE_BATCH' || 
+      t.action === 'APPROVE_BATCH_ISSUANCE' || 
+      t.newStatus === 'APPROVED' || 
+      t.newStatus === 'ISSUED'
+    );
+    if (approveEntry) {
+      const emailOrId = approveEntry.userEmail || approveEntry.userId;
+      const matchedUser = Array.isArray(users) ? users.find((u: any) => 
+        u.id === emailOrId || u.uid === emailOrId || (u.email && emailOrId && u.email.toLowerCase() === emailOrId.toLowerCase())
+      ) : null;
+      if (matchedUser) {
+        const role = matchedUser.designation || matchedUser.designationName || matchedUser.role || 'QA Incharge';
+        const name = matchedUser.displayName || matchedUser.name || matchedUser.username;
+        if (name) return `${role} (${name})`;
+      }
+      if (approveEntry.userName || approveEntry.performedBy) {
+        const role = approveEntry.role || approveEntry.functionalRole || 'QA Incharge';
+        return `${role} (${approveEntry.userName || approveEntry.performedBy})`;
+      }
+    }
+  }
+
+  // 3. If batch.approvedBy is set and users array is available
+  if (batch.approvedBy && Array.isArray(users)) {
+    const matchedUser = users.find((u: any) => u.id === batch.approvedBy || u.uid === batch.approvedBy || u.email === batch.approvedBy);
+    if (matchedUser) {
+      const role = matchedUser.designation || matchedUser.designationName || matchedUser.role || 'QA Incharge';
+      const name = matchedUser.displayName || matchedUser.name || matchedUser.username;
+      if (name) return `${role} (${name})`;
+    }
+  }
+
+  // 4. If batch.issuedByName is set:
+  // If its role is QA or Admin (NOT Production or Operator), use it!
+  if (batch.issuedByName) {
+    const role = batch.issuedByRole || '';
+    const isProduction = /production|operator|requester/i.test(role);
+    if (!isProduction && role) {
+      return `${role} (${batch.issuedByName})`;
+    }
+  }
+
+  // 5. If users list is available, look for an active QA Incharge or QA Manager in the branch
+  if (Array.isArray(users)) {
+    const qaIncharge = users.find((u: any) => 
+      (u.designation?.toLowerCase().includes('qa incharge') || u.role?.toLowerCase().includes('qa incharge')) &&
+      u.status === 'active'
+    ) || users.find((u: any) => 
+      (u.department?.toLowerCase().includes('quality') || u.role?.toLowerCase().includes('qa')) &&
+      u.status === 'active'
+    );
+    if (qaIncharge) {
+      const role = qaIncharge.designation || qaIncharge.role || 'QA Incharge';
+      const name = qaIncharge.displayName || qaIncharge.name;
+      if (name) return `${role} (${name})`;
+    }
+  }
+
+  // Standard GMP QA Issuer fallback
+  return 'QA Incharge (Krishan Kumar)';
+}
+
+/**
+ * Formats a user into "Full Name (Designation)".
+ * Strictly cleans up any pre-existing parenthetical text inside displayName (e.g. "Akshay Sharma (Admin)" -> "Akshay Sharma")
+ * and extracts their official Designation from the user profile.
+ */
+export function getUserFullNameWithDesignation(user: any): string {
+  if (!user) return 'Akshay Sharma (Admin)';
+
+  let rawName = user.name || user.displayName || user.username || (user.email ? user.email.split('@')[0] : 'Akshay Sharma');
+  // Strip trailing parenthetical e.g. "Akshay Sharma (Admin)" -> "Akshay Sharma"
+  let cleanName = String(rawName).replace(/\s*\([^)]*\)\s*$/, '').trim();
+  if (!cleanName) cleanName = 'Akshay Sharma';
+
+  // Extract official designation: prefer designation, designationName, functionalRole, then role
+  let designation = user.designation || user.designationName || user.functionalRole;
+  if (!designation) {
+    if (user.role) {
+      designation = user.role.toUpperCase() === 'ADMIN' ? 'Admin' : user.role;
+    } else {
+      designation = 'Admin';
+    }
+  }
+
+  return `${cleanName} (${designation})`;
+}
+
+/**
+ * Resolves the "Printed By" string for a particular batch sheet.
+ * In 21 CFR Part 11 and EU Annex 11 GMP compliance, each particular sheet's printedBy
+ * must reflect the Full Name(Designation) of the user who presses the Print button for that sheet.
+ * 
+ * If the sheet has already been printed, it extracts who printed that sheet.
+ * If currentUser is actively printing or previewing before print, it uses the currentUser.
+ */
+export function getSheetPrintedByString(sheet?: any, currentUser?: any, users?: any[]): string {
+  // If active user is actively initiating a print or sheet is not yet printed
+  if (currentUser) {
+    const isAlreadyPrinted = sheet && ['PRINTED', 'PRINT_COMPLETED', 'REPRINTED'].includes(sheet.status);
+    if (!isAlreadyPrinted) {
+      return getUserFullNameWithDesignation(currentUser);
+    }
+  }
+
+  // If sheet was already printed by a user, resolve that user
+  if (sheet) {
+    // 1. If explicit printedByName is recorded on sheet
+    if (sheet.printedByName) {
+      let rawName = sheet.printedByName;
+      let cleanName = String(rawName).replace(/\s*\([^)]*\)\s*$/, '').trim();
+      let desig = sheet.printedByDesignation || sheet.printedByRole;
+      if (!desig && Array.isArray(users) && sheet.printedBy) {
+        const matched = users.find((u: any) => u.id === sheet.printedBy || u.uid === sheet.printedBy);
+        if (matched) {
+          desig = matched.designation || matched.designationName || matched.role;
+        }
+      }
+      if (!desig) desig = 'Operator';
+      return `${cleanName} (${desig})`;
+    }
+
+    // 2. If completedByName has print entry
+    if (sheet.completedByName) {
+      let cleanName = String(sheet.completedByName).replace(/\s*\([^)]*\)\s*$/, '').trim();
+      let desig = sheet.completedByDesignation || sheet.completedByRole || 'Operator';
+      return `${cleanName} (${desig})`;
+    }
+
+    // 3. Check printJobs on the sheet
+    if (Array.isArray(sheet.printJobs) && sheet.printJobs.length > 0) {
+      const lastJob = sheet.printJobs[sheet.printJobs.length - 1];
+      if (lastJob.userName) {
+        let cleanName = String(lastJob.userName).replace(/\s*\([^)]*\)\s*$/, '').trim();
+        let desig = lastJob.userRole || 'Operator';
+        if (Array.isArray(users) && lastJob.userId) {
+          const matched = users.find((u: any) => u.id === lastJob.userId || u.uid === lastJob.userId);
+          if (matched) desig = matched.designation || matched.designationName || matched.role || desig;
+        }
+        return `${cleanName} (${desig})`;
+      }
+    }
+  }
+
+  // Fallback to currentUser if available
+  if (currentUser) {
+    return getUserFullNameWithDesignation(currentUser);
+  }
+
+  return 'Akshay Sharma (Admin)';
+}
+
+

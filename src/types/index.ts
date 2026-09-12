@@ -1,4 +1,10 @@
-export type UserRole = 'ADMIN' | 'SUPERVISOR' | 'OPERATOR' | 'QA';
+export type UserRole = 
+  | 'ADMIN' 
+  | 'QA_CHEMIST' 
+  | 'QA_INCHARGE' 
+  | 'QA_MANAGER' 
+  | 'PRODUCTION_INCHARGE'
+  | string;
 
 export interface User {
   uid: string;

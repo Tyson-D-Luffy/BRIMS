@@ -3,6 +3,7 @@ import { collection, doc, getDoc, getDocs, query, where, setDoc, updateDoc, runT
 import { AuditService } from "./audit.service.ts";
 import { SignatureService } from "./signature.service.ts";
 import { BatchSheetRecord, RecordStatus, Approval, MasterStatus } from "../../types.ts";
+import { computeNextVersion } from "./batchSheetMaster.service.ts";
 
 export class ApprovalService {
   static async submitForReview(recordId: string, user: any, signatureInfo?: any) {
@@ -272,13 +273,16 @@ export class ApprovalService {
       // 4. Update master
       let nextVerStr = masterData.version || "1.0";
       if (oldApprovedDocIds.length > 0) {
-        let prevVer = masterData.version || "1.0";
+        let prevVer = "1.0";
         const prevApprovedRecord = approvedSnapshot.docs.find(d => d.data().status === "APPROVED");
         if (prevApprovedRecord) {
           prevVer = prevApprovedRecord.data().masterSnapshot?.version || prevVer;
         }
-        const parsedVer = parseFloat(prevVer);
-        nextVerStr = isNaN(parsedVer) ? "2.0" : (parsedVer + 1.0).toFixed(1);
+        if (masterData.version && masterData.version !== prevVer) {
+          nextVerStr = masterData.version;
+        } else {
+          nextVerStr = computeNextVersion(prevVer);
+        }
       }
 
       transaction.update(masterRef, {

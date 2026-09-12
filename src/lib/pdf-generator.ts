@@ -195,9 +195,10 @@ export const generateRequestPreviewPDF = async (data: {
   singlePagesBatchNumber?: string;
   issueDate: string;
   issuedBy: string;
+  printedBy?: string;
   master: BatchSheetMaster;
   product: Product | null;
-  userInfo?: { name: string; id: string };
+  userInfo?: { name?: string; id?: string; designation?: string; role?: string; displayName?: string; username?: string };
   requestType?: 'NEW' | 'REPRINT';
   printCounts?: { [item: string]: number };
   requestId?: string;
@@ -602,7 +603,18 @@ export const generateRequestPreviewPDF = async (data: {
           const finalOverlays = overlayConfig || defaultOverlays;
           const overlayColor = rgb(0.88, 0.11, 0.11); // Red stamp color matching preview
 
-          const resolvedPrintedBy = data.userInfo ? `${data.userInfo.name} (${data.userInfo.id})` : 'Akshay Sharma (Admin)';
+          let resolvedPrintedBy = data.printedBy;
+          if (!resolvedPrintedBy) {
+            if (data.userInfo) {
+              const rawName = data.userInfo.name || data.userInfo.displayName || data.userInfo.username || 'Akshay Sharma';
+              const cleanName = String(rawName).replace(/\s*\([^)]*\)\s*$/, '').trim() || 'Akshay Sharma';
+              const desig = data.userInfo.designation || (data.userInfo.role ? (data.userInfo.role.toUpperCase() === 'ADMIN' ? 'Admin' : data.userInfo.role) : '') || 'Admin';
+              resolvedPrintedBy = `${cleanName} (${desig})`;
+            } else {
+              resolvedPrintedBy = 'Akshay Sharma (Admin)';
+            }
+          }
+          resolvedPrintedBy = resolvedPrintedBy.replace(/\s*\(([^)]+)\)\s*\(\1\)$/i, ' ($1)').trim();
           const currentPrintedDate = formatDateDDMMMYYYY(new Date());
           const currentPrintedTime = formatTime(new Date());
           const currentPrintedDateTime = `${currentPrintedDate}, ${currentPrintedTime}`;
@@ -614,9 +626,14 @@ export const generateRequestPreviewPDF = async (data: {
             data.requestId
           );
 
+          let resolvedIssuedBy = data.issuedBy || 'QA Incharge (Krishan Kumar)';
+          if (resolvedIssuedBy.toLowerCase().includes('production incharge') || resolvedIssuedBy.toLowerCase().includes('production manager')) {
+            resolvedIssuedBy = 'QA Incharge (Krishan Kumar)';
+          }
+
           const overlayTexts: Record<string, string> = {
             batchNo: `Batch No.:\n${task.headerBatchNumber}`,
-            issuedBy: `Issued By: ${data.issuedBy || 'ADMIN (Akshay Sharma)'}`,
+            issuedBy: `Issued By: ${resolvedIssuedBy}`,
             dateTimeOfIssue: `Date & Time Of issue: ${displayDate}, ${displayTime}`,
             printedBy: `Printed By: ${resolvedPrintedBy}`,
             printedDateTime: `Print Date & Time: ${currentPrintedDateTime}`,

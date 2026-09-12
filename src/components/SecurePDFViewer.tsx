@@ -5,6 +5,7 @@ import axios from 'axios';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { formatRequestId, getBatchNumberForSheet } from '../lib/pdf-generator';
+import { getUserFullNameWithDesignation } from '../lib/batch-sheets';
 
 // Set up the worker for react-pdf to use our secure same-origin local worker endpoint
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -69,9 +70,9 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
 
   const [overlays, setOverlays] = useState({
     batchNo: { x: 6, y: 0, label: "Batch No.", text: "Batch No.:\nMK14-26510/M", visible: true, width: undefined, height: undefined },
-    issuedBy: { x: 30, y: 0, label: "Issued By", text: "Issued By: ADMIN (Akshay Sharma)", visible: true, width: undefined, height: undefined },
+    issuedBy: { x: 30, y: 0, label: "Issued By", text: "Issued By: QA Incharge (Krishan Kumar)", visible: true, width: undefined, height: undefined },
     dateTimeOfIssue: { x: 30, y: 1.5, label: "Date & Time Of Issue", text: "Date & Time Of issue: 16-JUL-2026, 10:06:18", visible: true, width: undefined, height: undefined },
-    printedBy: { x: 30, y: 3.0, label: "Printed By", text: "Printed By: Akshay Sharma (Admin)", visible: true, width: undefined, height: undefined },
+    printedBy: { x: 30, y: 3.0, label: "Printed By", text: "Printed By: Akshay Sharma (System Administrator)", visible: true, width: undefined, height: undefined },
     printedDateTime: { x: 30, y: 4.5, label: "Print Date & Time", text: "Print Date & Time: 16-JUL-2026, 10:06:18", visible: true, width: undefined, height: undefined },
     requestId: { x: 0, y: 97.5, label: "Request ID", text: "Request ID: MK14-20260716-001", visible: true, width: undefined, height: undefined },
     comment: { x: 30, y: 85, label: "Custom Comment", text: "", visible: false, width: 220, height: 70 }
@@ -363,8 +364,11 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
       resolvedBatchNo = dropdownBatchSeries ? getBatchNumberForSheet(dropdownBatchSeries, firstBNo) : firstBNo;
     }
 
-    // 2. Resolve Issued By
-    const resolvedIssuedBy = issuedBy || "ADMIN (Akshay Sharma)";
+    // 2. Resolve Issued By: in GMP, issued by the QA user who approves the batch request
+    let resolvedIssuedBy = issuedBy || "QA Incharge (Krishan Kumar)";
+    if (resolvedIssuedBy.toLowerCase().includes("production incharge") || resolvedIssuedBy.toLowerCase().includes("production manager")) {
+      resolvedIssuedBy = "QA Incharge (Krishan Kumar)";
+    }
 
     // 3. Resolve Date & Time Of issue
     let resolvedDateOfIssue = dateOfIssue ? formatToDDMMMYYYY(dateOfIssue) : "";
@@ -378,9 +382,12 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
     }
 
     // 4. Resolve Printed By
-    const userDisplayName = user?.displayName || user?.username || 'Akshay Sharma';
-    const userRole = user?.role ? (user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase()) : 'Admin';
-    const resolvedPrintedBy = printedBy || `${userDisplayName} (${userRole})`;
+    let resolvedPrintedBy = printedBy;
+    if (!resolvedPrintedBy) {
+      resolvedPrintedBy = getUserFullNameWithDesignation(user);
+    } else {
+      resolvedPrintedBy = resolvedPrintedBy.replace(/\s*\(([^)]+)\)\s*\(\1\)$/i, ' ($1)').trim();
+    }
 
     // 5. Resolve Print Date and Time
     const currentPrintedDate = printedDateTime ? formatToDDMMMYYYY(printedDateTime) : formatToDDMMMYYYY(new Date());

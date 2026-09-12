@@ -383,9 +383,9 @@ export class PrintService {
         status: 'AWAITING_USER_CONFIRMATION',
         startedAt: nowIso,
         userId: user.uid,
-        userName: user.displayName || user.username || user.email || 'Operator',
+        userName: String(user.displayName || user.username || user.email || 'Operator').replace(/\s*\([^)]*\)\s*$/, '').trim() || 'Operator',
         userEmail: user.email || null,
-        userRole: user.role || 'ADMIN',
+        userRole: user.designation || user.designationName || user.functionalRole || (user.role === 'ADMIN' ? 'Admin' : user.role) || 'Operator',
         employeeId: user.employeeId || 'N/A',
         branch: (batchData as any).branch || user?.branch || 'Masulkhana',
         issueReason: reprintReason || null,
@@ -403,7 +403,7 @@ export class PrintService {
       targetSheet.totalPages = totalPages || targetSheet.totalPages || 60;
       targetSheet.activeLock = {
         lockedBy: user.uid,
-        lockedByName: user.displayName || user.username || user.email || 'Operator',
+        lockedByName: String(user.displayName || user.username || user.email || 'Operator').replace(/\s*\([^)]*\)\s*$/, '').trim() || 'Operator',
         lockedAt: nowIso,
         lockExpiresAt: new Date(nowMs + 15 * 60 * 1000).toISOString()
       };
@@ -719,16 +719,24 @@ export class PrintService {
       const nowMs = Date.now();
       const auditEventId = `AUD-PRT-${nowMs}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
+      const rawCompleteName = user.displayName || user.username || user.email || 'Operator';
+      const cleanCompleteName = String(rawCompleteName).replace(/\s*\([^)]*\)\s*$/, '').trim() || 'Operator';
+      const completeDesignation = user.designation || user.designationName || user.functionalRole || (user.role === 'ADMIN' ? 'Admin' : user.role) || 'Operator';
+
       const newPrintCount = (targetSheet.printCount || 0) + 1;
       targetSheet.status = 'PRINT_COMPLETED';
       targetSheet.printCount = newPrintCount;
       targetSheet.completedAt = nowIso;
       targetSheet.completedBy = user.uid;
-      targetSheet.completedByName = user.displayName || user.username || user.email || 'Operator';
+      targetSheet.completedByName = cleanCompleteName;
+      targetSheet.completedByRole = user.role || 'ADMIN';
+      targetSheet.completedByDesignation = completeDesignation;
       targetSheet.completedByEmployeeId = user.employeeId || 'N/A';
       targetSheet.printedAt = nowIso;
       targetSheet.printedBy = user.uid;
-      targetSheet.printedByName = user.displayName || user.username || user.email || 'Operator';
+      targetSheet.printedByName = cleanCompleteName;
+      targetSheet.printedByRole = user.role || 'ADMIN';
+      targetSheet.printedByDesignation = completeDesignation;
       targetSheet.printedByEmployeeId = user.employeeId || 'N/A';
       targetSheet.activeLock = null;
 

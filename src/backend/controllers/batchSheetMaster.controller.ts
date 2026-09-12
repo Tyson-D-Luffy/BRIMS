@@ -82,14 +82,34 @@ export class BatchSheetMasterController {
     }
   }
 
+  static async getActiveIssuanceImpact(req: AuthRequest, res: Response) {
+    try {
+      const masterObj = await BatchSheetMasterService.getMasterById(req.params.id);
+      if (masterObj && (masterObj as any).branch && (masterObj as any).branch !== (req as any).selectedBranch) {
+        return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
+      }
+      const impact = await BatchSheetMasterService.getActiveIssuanceImpact(req.params.id);
+      res.json({ success: true, data: impact });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
   static async requestUpdate(req: AuthRequest, res: Response) {
     try {
       const masterObj = await BatchSheetMasterService.getMasterById(req.params.id);
       if (masterObj && (masterObj as any).branch && (masterObj as any).branch !== (req as any).selectedBranch) {
         return res.status(403).json({ success: false, message: "Access denied. You are not authorized to access this branch data." });
       }
-      const { changeReason } = req.body;
-      const master = await BatchSheetMasterService.requestUpdateMaster(req.params.id, changeReason, req.user, req.signatureInfo);
+      const { changeReason, discardActiveRequests, proceedWithDiscard, expectedSnapshot } = req.body;
+      const shouldDiscard = discardActiveRequests === true || proceedWithDiscard === true;
+      const master = await BatchSheetMasterService.requestUpdateMaster(
+        req.params.id, 
+        changeReason, 
+        req.user, 
+        req.signatureInfo, 
+        { discardActiveRequests: shouldDiscard, expectedSnapshot }
+      );
       res.json({ success: true, data: master, message: "Batch Sheet Master update requested successfully" });
     } catch (error: any) {
       res.status(400).json({ success: false, message: error.message });

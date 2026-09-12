@@ -22,7 +22,7 @@ WORKDIR /app
 
 # Copy production dependencies
 COPY package*.json ./
-RUN npm install --production
+RUN npm install --omit=dev
 
 # Copy built assets and server code
 COPY --from=builder /app/dist ./dist
@@ -34,8 +34,9 @@ COPY --from=builder /app/firebase-applet-config.json ./
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Expose port
+# Expose ports for container environments
 EXPOSE 3000
+EXPOSE 8080
 
 # Start the application
 CMD ["node", "dist/server.cjs"]

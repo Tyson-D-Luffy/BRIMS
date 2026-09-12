@@ -230,8 +230,8 @@ export default function ProductMasters() {
     const baseRole = getUserBaseRole(user);
     const isAuthorizedRole = 
       baseRole === 'ADMIN' || 
-      baseRole === 'QA' || 
-      baseRole === 'PRODUCTION_MANAGER' || 
+      ['QA_CHEMIST', 'QA_INCHARGE', 'QA_MANAGER', 'QA'].includes(baseRole) || 
+      ['PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER'].includes(baseRole) || 
       user?.permissions?.includes('create:product') ||
       user?.permissions?.includes('edit:product') ||
       user?.email?.toLowerCase() === 'shakshay04@gmail.com';
@@ -291,8 +291,8 @@ export default function ProductMasters() {
     const baseRole = getUserBaseRole(user);
     const isAuthorizedRole = 
       baseRole === 'ADMIN' || 
-      baseRole === 'QA' || 
-      baseRole === 'PRODUCTION_MANAGER' || 
+      ['QA_CHEMIST', 'QA_INCHARGE', 'QA_MANAGER', 'QA'].includes(baseRole) || 
+      ['PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER'].includes(baseRole) || 
       user?.permissions?.includes('product:deactivate') ||
       user?.permissions?.includes('edit:product') ||
       user?.email?.toLowerCase() === 'shakshay04@gmail.com';
@@ -497,8 +497,8 @@ export default function ProductMasters() {
 
   const baseRole = getUserBaseRole(user);
   const isAdmin = baseRole === 'ADMIN' || user?.permissions?.includes('user:manage');
-  const isProduction = user?.permissions?.includes('create:product') || user?.permissions?.includes('edit:product') || baseRole === 'PRODUCTION_MANAGER';
-  const isQA = user?.permissions?.includes('product:review') || user?.permissions?.includes('product:approve') || baseRole === 'QA';
+  const isProduction = user?.permissions?.includes('create:product') || user?.permissions?.includes('edit:product') || ['PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER'].includes(baseRole);
+  const isQA = user?.permissions?.includes('product:review') || user?.permissions?.includes('product:approve') || ['QA_CHEMIST', 'QA_INCHARGE', 'QA_MANAGER', 'QA'].includes(baseRole);
   // Submit Product Master is assigned strictly to QA Chemist (users holding product:submit)
   const canSubmitProduct = !!user?.permissions?.includes('product:submit');
 

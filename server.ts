@@ -1,6 +1,6 @@
 import "dotenv/config";
 import express from "express";
-import { createServer as createViteServer } from "vite";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import jwt from "jsonwebtoken";
@@ -40,7 +40,9 @@ const JWT_SECRET = process.env.JWT_SECRET || "brims-super-secret-key-123";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.NODE_ENV === "production" && process.env.PORT
+    ? parseInt(process.env.PORT, 10)
+    : 3000;
   const httpServer = createHttpServer(app);
 
   // Trust proxy for rate limiting behind Cloud Run/Nginx
@@ -143,8 +145,13 @@ async function startServer() {
 
   // Serve PDF worker locally for 100% offline support and reliability
   app.get("/pdf.worker.min.mjs", (req, res) => {
-    res.setHeader("Content-Type", "application/javascript");
-    res.sendFile(path.resolve(process.cwd(), "node_modules/pdfjs-dist/build/pdf.worker.min.mjs"));
+    const workerPath = path.resolve(process.cwd(), "node_modules/pdfjs-dist/build/pdf.worker.min.mjs");
+    if (fs.existsSync(workerPath)) {
+      res.setHeader("Content-Type", "application/javascript");
+      res.sendFile(workerPath);
+    } else {
+      res.status(404).send("Worker not found");
+    }
   });
 
   // Audit Log Proxy (to ensure server-side logging if needed)
@@ -179,6 +186,7 @@ async function startServer() {
   // --- Vite Integration ---
 
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { 
         middlewareMode: true,
@@ -247,44 +255,8 @@ async function startServer() {
           console.log("BRIMS User Employee ID automatic migration completed successfully via Admin SDK.");
         } else {
           console.log("[MIGRATION] Admin SDK inactive or lacking permissions. Falling back to Client SDK...");
-          const { db, ensureAuth } = await import("./src/backend/config/firebase-client.ts");
-          const { collection, getDocs, doc, updateDoc } = await import("firebase/firestore");
-          
-          // Ensure anonymous auth is executed successfully first
-          await ensureAuth();
-          
-          const usersRef = collection(db, "users");
-          const querySnapshot = await getDocs(usersRef);
-          const existingIds = new Set<string>();
-          
-          // collect existing employee IDs
-          querySnapshot.forEach(docSnap => {
-            const id = docSnap.data().employeeId;
-            if (id) {
-              existingIds.add(String(id).trim());
-            }
-          });
-
-          let count = 101;
-          for (const docSnap of querySnapshot.docs) {
-            const data = docSnap.data();
-            if (!data.employeeId) {
-              let generatedId = `EMP${String(count).padStart(5, '0')}`;
-              while (existingIds.has(generatedId)) {
-                count++;
-                generatedId = `EMP${String(count).padStart(5, '0')}`;
-              }
-              existingIds.add(generatedId);
-              count++;
-              
-              await updateDoc(doc(db, "users", docSnap.id), {
-                employeeId: generatedId,
-                updatedAt: new Date().toISOString()
-              });
-              console.log(`[MIGRATION-CLIENT] Migrated user ${data.email || docSnap.id} to Employee ID: ${generatedId}`);
-            }
-          }
-          console.log("BRIMS User Employee ID automatic migration completed successfully via Client SDK.");
+          const { UserService } = await import("./src/backend/services/user.service.ts");
+          await UserService.runEmployeeIdMigration();
         }
       } catch (err: any) {
         console.error("Failed to run User Employee ID migration:", err);

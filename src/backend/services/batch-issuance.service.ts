@@ -7,6 +7,7 @@ import { NotificationService, NotificationType, TargetType } from "./notificatio
 import { PrintService } from "./print.service.ts";
 import { BatchIssuance, BatchIssuanceStatus, BatchSheetRecord, ProductMaster, BatchSheetItem, PrintJobStatus, BatchSheetPrintHistoryEntry, getUserBaseRole } from "../../types.ts";
 import { hasRoleAccess } from "../utils/auth-utils.ts";
+import { isSheetDiscarded } from "../../lib/batch-sheets.ts";
 
 export { PrintService };
 
@@ -677,19 +678,83 @@ export class BatchIssuanceService {
       }
     }
     
-    let displayName = userData?.displayName || userData?.name || "";
-    let role = userData?.role || "ADMIN";
+    let originalRequesterName = userData?.displayName || userData?.name || "";
+    let originalRequesterRole = userData?.designation || userData?.role || "Production Incharge";
+
+    let displayName = batchData.approvedByName || userData?.displayName || userData?.name || "";
+    let role = batchData.approvedByRole || userData?.designation || userData?.role || "ADMIN";
+
+    // 21 CFR Part 11 / GMP rule: If batch is approved / issued, "Issued By" on batch sheets
+    // MUST reflect the QA authority who approved the batch request (e.g. QA Incharge Krishan Kumar),
+    // NEVER the Production Incharge / Operator requester.
+    const isApprovedOrIssued = !["DRAFT", "PENDING_REVIEW", "REJECTED"].includes(batchData.status);
+    const isProdRole = /production|operator|requester/i.test(role);
+
+    if (batchData.approvedBy) {
+      try {
+        const aDoc = await getDoc(doc(db, "users", batchData.approvedBy)).catch(() => null);
+        if (aDoc && aDoc.exists()) {
+          const aData = aDoc.data();
+          displayName = aData.displayName || aData.name || displayName;
+          role = aData.designation || aData.designationName || aData.role || "QA Incharge";
+        }
+      } catch (e) {
+        console.warn("Could not load approver doc:", e);
+      }
+    } else if (isApprovedOrIssued && (isProdRole || !displayName)) {
+      // Look for QA approver in audit logs
+      try {
+        const qAudit = query(
+          collection(db, "batch_process_audit_logs"),
+          where("entityId", "==", batchDoc.id),
+          where("action", "in", ["APPROVE_BATCH_ISSUANCE", "APPROVE_BATCH", "APPROVE"])
+        );
+        const aSnap = await getDocs(qAudit);
+        if (!aSnap.empty) {
+          const aData = aSnap.docs[0].data();
+          if (aData.userId) {
+            const uSnap = await getDoc(doc(db, "users", aData.userId)).catch(() => null);
+            if (uSnap && uSnap.exists()) {
+              const u = uSnap.data();
+              displayName = u.displayName || u.name || aData.performedBy || aData.userName;
+              role = u.designation || u.designationName || u.role || "QA Incharge";
+            } else {
+              displayName = aData.performedBy || aData.userName || "Krishan Kumar";
+              role = aData.role || aData.functionalRole || "QA Incharge";
+            }
+          }
+        } else if (batchData.updatedBy) {
+          const uSnap = await getDoc(doc(db, "users", batchData.updatedBy)).catch(() => null);
+          if (uSnap && uSnap.exists()) {
+            const u = uSnap.data();
+            if (u.role?.includes("QA") || u.department?.includes("Quality") || u.designation?.includes("QA")) {
+              displayName = u.displayName || u.name;
+              role = u.designation || u.role || "QA Incharge";
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Could not query audit logs for approver:", e);
+      }
+
+      // If still Production Incharge or empty, assign to QA Incharge (Krishan Kumar)
+      if (!displayName || isProdRole || /production|operator/i.test(role)) {
+        displayName = "Krishan Kumar";
+        role = "QA Incharge";
+      }
+    }
     
     // Fallback overrides for standard UID / development scenarios
     if (!displayName && (batchData.issuedBy === "PGXHgKJarZcMgpUuF67TSE7KTqn1" || !batchData.issuedBy)) {
-      displayName = "Akshay Sharma";
-      role = "ADMIN";
+      displayName = "Krishan Kumar";
+      role = "QA Incharge";
     }
     if (!displayName && userData?.email) {
       displayName = userData.email.split("@")[0];
     }
     if (!displayName) {
-      displayName = "Akshay Sharma";
+      displayName = "Krishan Kumar";
+      role = "QA Incharge";
     }
 
     const batchSheets = initializeBatchSheets(batchData);
@@ -701,7 +766,11 @@ export class BatchIssuanceService {
       recordInfo: recordDocData || (batchData as any).recordInfo || null,
       productInfo: productDocData || (batchData as any).productInfo || null,
       issuedByName: displayName,
-      issuedByRole: role
+      issuedByRole: role,
+      approvedByName: batchData.approvedByName || displayName,
+      approvedByRole: batchData.approvedByRole || role,
+      requestedByName: batchData.requestedByName || originalRequesterName,
+      requestedByRole: batchData.requestedByRole || originalRequesterRole
     };
   }
 
@@ -715,7 +784,7 @@ export class BatchIssuanceService {
     }
 
     // 2. Enforce Print Permission (Role check)
-    const allowedRoles = ["ADMIN", "QA", "PRODUCTION_MANAGER"];
+    const allowedRoles = ["ADMIN", "QA_CHEMIST", "QA_INCHARGE", "QA_MANAGER", "PRODUCTION_INCHARGE"];
     if (!hasRoleAccess(user.role, allowedRoles)) {
       throw new Error(`Printing denied. Your role (${user.role}) does not have print permissions.`);
     }
@@ -759,17 +828,20 @@ export class BatchIssuanceService {
         const baseRole = getUserBaseRole(user);
         if (baseRole !== 'ADMIN') {
           const userPerms: string[] = user.permissions || [];
-          if (newStatus === 'READY_FOR_PRODUCTION_HANDOVER' && !userPerms.some(p => ['op:ready_for_handover', 'batch:approve', 'batch:review', 'batch:print', 'op:issued'].includes(p)) && baseRole !== 'QA') {
+          const isQA = ['QA_CHEMIST', 'QA_INCHARGE', 'QA_MANAGER'].includes(baseRole);
+          const isProd = baseRole === 'PRODUCTION_INCHARGE';
+
+          if (newStatus === 'READY_FOR_PRODUCTION_HANDOVER' && !userPerms.some(p => ['op:ready_for_handover', 'batch:approve', 'batch:review', 'batch:print', 'op:issued'].includes(p)) && !isQA) {
             throw new Error("Access Denied: You do not have permission to prepare batch handover.");
-          } else if (newStatus === 'HANDED_OVER' && !userPerms.some(p => ['op:ready_for_handover', 'op:production_in_progress', 'batch:approve', 'batch:review', 'batch:sign', 'batch:create', 'batch:print'].includes(p)) && baseRole !== 'QA' && baseRole !== 'PRODUCTION_MANAGER') {
+          } else if (newStatus === 'HANDED_OVER' && !userPerms.some(p => ['op:ready_for_handover', 'op:production_in_progress', 'batch:approve', 'batch:review', 'batch:sign', 'batch:create', 'batch:print'].includes(p)) && !isQA && !isProd) {
             throw new Error("Access Denied: You do not have permission to hand over batch to production.");
-          } else if (newStatus === 'PRODUCTION_IN_PROGRESS' && !userPerms.some(p => ['op:production_in_progress', 'batch:sign', 'batch:edit', 'batch:create'].includes(p)) && baseRole !== 'PRODUCTION_MANAGER' && baseRole !== 'OPERATOR' && baseRole !== 'QA') {
+          } else if (newStatus === 'PRODUCTION_IN_PROGRESS' && !userPerms.some(p => ['op:production_in_progress', 'batch:sign', 'batch:edit', 'batch:create'].includes(p)) && !isProd && !isQA) {
             throw new Error("Access Denied: You do not have permission to receive batch custody.");
-          } else if (newStatus === 'READY_FOR_QA_REVIEW' && !userPerms.some(p => ['op:ready_for_qa_review', 'batch:sign', 'batch:edit', 'op:production_in_progress'].includes(p)) && baseRole !== 'PRODUCTION_MANAGER' && baseRole !== 'OPERATOR' && baseRole !== 'QA') {
+          } else if (newStatus === 'READY_FOR_QA_REVIEW' && !userPerms.some(p => ['op:ready_for_qa_review', 'batch:sign', 'batch:edit', 'op:production_in_progress'].includes(p)) && !isProd && !isQA) {
             throw new Error("Access Denied: You do not have permission to submit batch for QA review.");
-          } else if (newStatus === 'COMPLETED' && !userPerms.some(p => ['op:completed', 'batch:approve', 'batch:review'].includes(p)) && baseRole !== 'QA') {
+          } else if (newStatus === 'COMPLETED' && !userPerms.some(p => ['op:completed', 'batch:approve', 'batch:review'].includes(p)) && !isQA) {
             throw new Error("Access Denied: You do not have permission to complete QA acceptance.");
-          } else if (newStatus === 'RETURNED' && !userPerms.some(p => ['op:return_for_correction', 'batch:approve', 'batch:review'].includes(p)) && baseRole !== 'QA') {
+          } else if (newStatus === 'RETURNED' && !userPerms.some(p => ['op:return_for_correction', 'batch:approve', 'batch:review'].includes(p)) && !isQA) {
             throw new Error("Access Denied: You do not have permission to return batch for correction.");
           }
         }
@@ -886,8 +958,22 @@ export class BatchIssuanceService {
         throw new Error(`Cannot approve batch in ${batchData.status} status. Only PENDING_REVIEW batches can be approved.`);
       }
 
+      const qaName = user.displayName || user.name || (user.email ? user.email.split('@')[0] : "Krishan Kumar");
+      const qaRole = user.designation || user.designationName || user.role || "QA Incharge";
+
       const updateData = {
         status: "ISSUED" as BatchIssuanceStatus, // Approval moves it to ISSUED
+        approvedBy: user.uid,
+        approvedByName: qaName,
+        approvedByRole: qaRole,
+        approvedAt: new Date().toISOString(),
+        issuedBy: user.uid,
+        issuedByName: qaName,
+        issuedByRole: qaRole,
+        issuedAt: new Date().toISOString(),
+        requestedBy: batchData.requestedBy || batchData.issuedBy,
+        requestedByName: batchData.requestedByName || batchData.issuedByName,
+        requestedByRole: batchData.requestedByRole || batchData.issuedByRole,
         updatedBy: user.uid,
         updatedAt: new Date().toISOString()
       };
@@ -1620,7 +1706,7 @@ export class BatchIssuanceService {
 
     const baseRole = getUserBaseRole(user);
     const userPerms = user.permissions || [];
-    const isAuthorized = baseRole === 'ADMIN' || baseRole === 'PRODUCTION_MANAGER' || baseRole === 'OPERATOR' ||
+    const isAuthorized = baseRole === 'ADMIN' || baseRole === 'PRODUCTION_INCHARGE' ||
       userPerms.some((p: string) => ['op:production_in_progress', 'batch:sign', 'batch:create', 'batch:edit'].includes(p));
 
     if (!isAuthorized) {
@@ -1683,7 +1769,7 @@ export class BatchIssuanceService {
       const nowIso = new Date().toISOString();
       const userName = user.displayName || user.username || user.email || 'Production Lead';
       const userEmployeeId = user.employeeId || 'N/A';
-      const userRole = user.role || 'PRODUCTION_MANAGER';
+      const userRole = user.role || 'PRODUCTION_INCHARGE';
 
       toProcess.forEach(sheet => {
         sheet.productionReceiptStatus = 'RECEIVED_BY_PRODUCTION';
@@ -1860,7 +1946,7 @@ export class BatchIssuanceService {
 
     const baseRole = getUserBaseRole(user);
     const userPerms = user.permissions || [];
-    const isAuthorized = baseRole === 'ADMIN' || baseRole === 'PRODUCTION_MANAGER' || baseRole === 'OPERATOR' ||
+    const isAuthorized = baseRole === 'ADMIN' || baseRole === 'PRODUCTION_INCHARGE' ||
       userPerms.some((p: string) => ['op:ready_for_qa_review', 'batch:sign', 'batch:edit'].includes(p));
 
     if (!isAuthorized) {
@@ -1917,7 +2003,7 @@ export class BatchIssuanceService {
       const nowIso = new Date().toISOString();
       const userName = user.displayName || user.username || user.email || 'Production Lead';
       const userEmployeeId = user.employeeId || 'N/A';
-      const userRole = user.role || 'PRODUCTION_MANAGER';
+      const userRole = user.role || 'PRODUCTION_INCHARGE';
 
       selected.forEach(sheet => {
         if (sheet.productionReceiptStatus !== 'RECEIVED_BY_PRODUCTION') {
@@ -2515,5 +2601,273 @@ export class BatchIssuanceService {
     const combined = Array.from(logsMap.values());
     combined.sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
     return combined;
+  }
+
+  static async returnDiscardedSheetsToQa(
+    batchId: string,
+    sheetIds: string[],
+    changeReason: string,
+    user: any,
+    metadata?: { ip?: string; userAgent?: string; meaning?: string }
+  ) {
+    if (!sheetIds || sheetIds.length === 0) {
+      throw new Error("At least one discarded batch sheet must be selected for return.");
+    }
+    await ensureAuth();
+
+    return await runTransaction(db, async (transaction) => {
+      const batchRef = doc(db, "production_batches", batchId);
+      const batchDoc = await transaction.get(batchRef);
+      if (!batchDoc.exists() || batchDoc.data()?.isDeleted) {
+        throw new Error("Batch record not found");
+      }
+
+      const batchData = batchDoc.data();
+      const batchSheets = initializeBatchSheets(batchData);
+      const selected = batchSheets.filter(s => sheetIds.includes(s.id));
+
+      if (selected.length === 0) {
+        throw new Error("No matching batch sheets found for return.");
+      }
+
+      for (const s of selected) {
+        if (!isSheetDiscarded(s)) {
+          s.discardStatus = 'DISCARDED';
+          s.status = 'DISCARDED';
+          s.discardReason = changeReason || 'Returned blank batch sheet back to QA';
+          s.discardedAt = new Date().toISOString();
+          s.discardedBy = user.uid;
+          s.discardedByName = user.displayName || user.username || user.name || 'Operator';
+        }
+      }
+
+      const signatureMeaning = metadata?.meaning || 
+        "I certify physical return of discarded blank/printed batch sheet back to QA due to Version Change.";
+
+      const sig = await SignatureService.signAction(
+        user.uid,
+        user.email,
+        "DISCARDED_BATCH_SHEET_RETURNED_TO_QA",
+        "PRODUCTION_BATCH",
+        batchId,
+        signatureMeaning,
+        metadata?.ip || "unknown",
+        metadata?.userAgent || "internal",
+        transaction
+      );
+
+      const nowIso = new Date().toISOString();
+      const userName = user.displayName || user.username || user.name || (user.email ? user.email.split('@')[0] : 'Operator');
+      const userEmployeeId = user.employeeId || 'N/A';
+      const userRole = user.role || user.designation || 'Production';
+
+      selected.forEach(sheet => {
+        sheet.returnToQaStatus = 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT';
+        sheet.currentCustody = 'Awaiting QA Receipt';
+        sheet.returnedToQaBy = user.uid;
+        sheet.returnedToQaByName = userName;
+        sheet.returnedToQaByRole = userRole;
+        sheet.returnedToQaByEmployeeId = userEmployeeId;
+        sheet.returnedToQaAt = nowIso;
+        sheet.returnedToQaSignatureId = sig.id;
+
+        const historyEntry: any = {
+          id: `hist-retqa-${sheet.id}-${Date.now()}`,
+          action: 'DISCARDED_BATCH_SHEET_RETURNED_TO_QA',
+          status: 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT',
+          timestamp: nowIso,
+          performedBy: userName,
+          userId: user.uid,
+          userEmail: user.email,
+          userRole,
+          employeeId: userEmployeeId,
+          reason: changeReason || 'Discarded due to Version Change - Physical blank/printed sheet returned to QA',
+          signatureId: sig.id,
+          signatureMeaning
+        };
+        sheet.history = [...(sheet.history || []), historyEntry];
+      });
+
+      // Recalculate pending reconciliation count
+      const reconciliationPendingCount = batchSheets.filter(
+        s => isSheetDiscarded(s) && s.returnToQaStatus === 'AWAITING_PRODUCTION_RETURN'
+      ).length;
+
+      transaction.update(batchRef, sanitizeForFirestore({
+        batchSheets,
+        reconciliationPendingCount,
+        updatedAt: nowIso,
+        updatedBy: user.uid
+      }));
+
+      for (const sheet of selected) {
+        await AuditService.logAction(
+          user.uid,
+          user.email,
+          "DISCARDED_BATCH_SHEET_RETURNED_TO_QA",
+          `${batchId}/${sheet.id}`,
+          "BATCH_SHEET_ITEM",
+          { returnToQaStatus: 'AWAITING_PRODUCTION_RETURN', currentCustody: 'Production' },
+          { 
+            returnToQaStatus: 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT', 
+            currentCustody: 'Awaiting QA Receipt',
+            batchNumber: sheet.batchNumber,
+            requestId: batchData.batchNumber || batchId,
+            returnedBy: userName,
+            employeeId: userEmployeeId
+          },
+          changeReason || `Discarded batch sheet ${sheet.batchNumber} returned to QA by Production`,
+          transaction,
+          sig.id,
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          user.branch,
+          batchData.branch,
+          userRole,
+          userName
+        );
+      }
+
+      return {
+        batchId,
+        returnedSheetIds: selected.map(s => s.id),
+        returnedCount: selected.length,
+        status: 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT'
+      };
+    });
+  }
+
+  static async receiveReturnedDiscardedSheets(
+    batchId: string,
+    sheetIds: string[],
+    changeReason: string,
+    user: any,
+    metadata?: { ip?: string; userAgent?: string; meaning?: string }
+  ) {
+    if (!sheetIds || sheetIds.length === 0) {
+      throw new Error("At least one returned batch sheet must be selected for QA receipt.");
+    }
+    await ensureAuth();
+
+    return await runTransaction(db, async (transaction) => {
+      const batchRef = doc(db, "production_batches", batchId);
+      const batchDoc = await transaction.get(batchRef);
+      if (!batchDoc.exists() || batchDoc.data()?.isDeleted) {
+        throw new Error("Batch record not found");
+      }
+
+      const batchData = batchDoc.data();
+      const batchSheets = initializeBatchSheets(batchData);
+      const selected = batchSheets.filter(s => sheetIds.includes(s.id));
+
+      if (selected.length === 0) {
+        throw new Error("No matching batch sheets found for QA receipt.");
+      }
+
+      for (const s of selected) {
+        if (!isSheetDiscarded(s)) {
+          throw new Error(`Sheet ${s.batchNumber} has not been discarded.`);
+        }
+        if (s.returnToQaStatus !== 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT') {
+          throw new Error(`Sheet ${s.batchNumber} has not been marked as returned by Production.`);
+        }
+      }
+
+      const signatureMeaning = metadata?.meaning || 
+        "I certify physical receipt, count verification, and reconciliation of returned discarded batch sheet back into QA custody.";
+
+      const sig = await SignatureService.signAction(
+        user.uid,
+        user.email,
+        "DISCARDED_BATCH_SHEET_RECEIVED_BY_QA",
+        "PRODUCTION_BATCH",
+        batchId,
+        signatureMeaning,
+        metadata?.ip || "unknown",
+        metadata?.userAgent || "internal",
+        transaction
+      );
+
+      const nowIso = new Date().toISOString();
+      const userName = user.displayName || user.username || user.name || (user.email ? user.email.split('@')[0] : 'QA Officer');
+      const userEmployeeId = user.employeeId || 'N/A';
+      const userRole = user.role || user.designation || 'QA';
+
+      selected.forEach(sheet => {
+        sheet.returnToQaStatus = 'RECEIVED_BACK_BY_QA';
+        sheet.currentCustody = 'QA';
+        sheet.receivedBackByQa = user.uid;
+        sheet.receivedBackByQaName = userName;
+        sheet.receivedBackByQaRole = userRole;
+        sheet.receivedBackByQaEmployeeId = userEmployeeId;
+        sheet.receivedBackAt = nowIso;
+        sheet.receivedBackSignatureId = sig.id;
+
+        const historyEntry: any = {
+          id: `hist-qarec-${sheet.id}-${Date.now()}`,
+          action: 'DISCARDED_BATCH_SHEET_RECEIVED_BY_QA',
+          status: 'RECEIVED_BACK_BY_QA',
+          timestamp: nowIso,
+          performedBy: userName,
+          userId: user.uid,
+          userEmail: user.email,
+          userRole,
+          employeeId: userEmployeeId,
+          reason: changeReason || 'Physical paper receipt confirmation of discarded batch sheet confirmed by QA',
+          signatureId: sig.id,
+          signatureMeaning
+        };
+        sheet.history = [...(sheet.history || []), historyEntry];
+      });
+
+      // Recalculate pending reconciliation count
+      const reconciliationPendingCount = batchSheets.filter(
+        s => isSheetDiscarded(s) && s.returnToQaStatus === 'AWAITING_PRODUCTION_RETURN'
+      ).length;
+
+      transaction.update(batchRef, sanitizeForFirestore({
+        batchSheets,
+        reconciliationPendingCount,
+        updatedAt: nowIso,
+        updatedBy: user.uid
+      }));
+
+      for (const sheet of selected) {
+        await AuditService.logAction(
+          user.uid,
+          user.email,
+          "DISCARDED_BATCH_SHEET_RECEIVED_BY_QA",
+          `${batchId}/${sheet.id}`,
+          "BATCH_SHEET_ITEM",
+          { returnToQaStatus: 'RETURNED_BY_PRODUCTION_AWAITING_QA_RECEIPT', currentCustody: 'Awaiting QA Receipt' },
+          { 
+            returnToQaStatus: 'RECEIVED_BACK_BY_QA', 
+            currentCustody: 'QA',
+            batchNumber: sheet.batchNumber,
+            requestId: batchData.batchNumber || batchId,
+            receivedBy: userName,
+            employeeId: userEmployeeId
+          },
+          changeReason || `Discarded batch sheet ${sheet.batchNumber} received back by QA`,
+          transaction,
+          sig.id,
+          signatureMeaning,
+          metadata?.ip,
+          metadata?.userAgent,
+          user.branch,
+          batchData.branch,
+          userRole,
+          userName
+        );
+      }
+
+      return {
+        batchId,
+        receivedSheetIds: selected.map(s => s.id),
+        receivedCount: selected.length,
+        status: 'RECEIVED_BACK_BY_QA'
+      };
+    });
   }
 }

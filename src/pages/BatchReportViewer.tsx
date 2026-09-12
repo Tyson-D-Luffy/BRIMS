@@ -25,6 +25,7 @@ import { LoadingPage } from '../components/LoadingSpinner';
 import { toast } from 'sonner';
 import { cn } from '../lib/utils';
 import { SecurePDFViewer } from '../components/SecurePDFViewer';
+import { getBatchIssuedByString } from '../lib/batch-sheets';
 import { useAuth } from '../context/AuthContext';
 
 export default function BatchReportViewer() {
@@ -173,7 +174,7 @@ export default function BatchReportViewer() {
                 batchInfo={`${productMaster?.title} | Status: ${batch.status}`}
                 batchNo={batch.batchNumberSeries || batch.batchNumber}
                 dropdownBatchSeries={(batch as any).dropdownBatchSeries}
-                issuedBy={batch.issuedByName ? `${batch.issuedByRole || 'ADMIN'} (${batch.issuedByName})` : 'ADMIN (Akshay Sharma)'}
+                issuedBy={getBatchIssuedByString(batch)}
                 dateOfIssue={batch.createdAt || batch.manufacturingDate}
                 timeOfIssue={batch.createdAt || batch.manufacturingDate}
                 printedBy={user ? `${user.displayName || user.username || 'Unknown'} (${user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase() : 'Admin'})` : 'Akshay Sharma (Admin)'}

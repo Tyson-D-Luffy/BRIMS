@@ -714,7 +714,8 @@ export default function BatchSheetRequestForm() {
     }
     
     const product = products.find(p => p.id === selectedProduct) || null;
-    const issuedByText = user?.designation || user?.role || 'Authorized Personnel';
+    const isProdUser = user?.role?.toLowerCase().includes('production') || user?.designation?.toLowerCase().includes('production') || user?.department?.toLowerCase().includes('production');
+    const issuedByText = (!isProdUser && (user?.designation || user?.role)) ? `${user?.designation || user?.role} (${user?.displayName || (user as any)?.name || 'QA'})` : 'QA Incharge (Krishan Kumar)';
 
     const hasFile = identifiedMaster.files && identifiedMaster.files.length > 0;
     if (!hasFile) {
@@ -729,7 +730,7 @@ export default function BatchSheetRequestForm() {
         dropdownBatchSeries: dropdownBatchSeries || identifiedMaster.batchNumberSeries || product?.batchNumberSeries || '',
         singlePagesBatchNumber: singlePagesBatchNumber.trim() || undefined,
         issueDate: startDate,
-        issuedBy: `${issuedByText} (${user?.displayName || user?.email || ''})`.trim(),
+        issuedBy: issuedByText,
         master: identifiedMaster,
         product: product,
         userInfo: user ? { name: user.displayName || user.username || user.email || 'Unknown', id: user.employeeId || 'N/A' } : undefined,
@@ -1386,7 +1387,7 @@ export default function BatchSheetRequestForm() {
           batchNo={batchNumberSeries || identifiedMaster?.batchNumberSeries || 'MK14-26510/M'}
           dropdownBatchSeries={dropdownBatchSeries || identifiedMaster?.batchNumberSeries || ''}
           singlePagesBatchNumber={singlePagesBatchNumber.trim() || undefined}
-          issuedBy={user ? `${user.role || 'ADMIN'} (${user.displayName || user.username || 'Akshay Sharma'})` : 'ADMIN (Akshay Sharma)'}
+          issuedBy="QA Incharge (Krishan Kumar)"
           dateOfIssue={new Date().toISOString()}
           timeOfIssue={new Date().toISOString()}
           printedBy={user ? `${user.displayName || user.username || 'Unknown'} (${user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase() : 'Admin'})` : 'Akshay Sharma (Admin)'}

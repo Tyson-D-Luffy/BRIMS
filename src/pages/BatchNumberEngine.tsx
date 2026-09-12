@@ -2307,7 +2307,7 @@ function FormatsScreen({
                         {
                           status: 'DRAFT',
                           user: selectedFormatWorkflow.createdBy || 'QA Admin',
-                          role: 'PRODUCTION_MANAGER',
+                          role: 'PRODUCTION_INCHARGE',
                           timestamp: selectedFormatWorkflow.createdAt || new Date().toISOString(),
                           comments: 'Initial layout design and token configuration.'
                         },
@@ -2315,7 +2315,7 @@ function FormatsScreen({
                           ? [{
                               status: 'UNDER_REVIEW',
                               user: selectedFormatWorkflow.createdBy || 'QA Admin',
-                              role: 'PRODUCTION_MANAGER',
+                              role: 'PRODUCTION_INCHARGE',
                               timestamp: selectedFormatWorkflow.updatedAt || selectedFormatWorkflow.createdAt || new Date().toISOString(),
                               comments: 'Submitted layout format for QA authorization.',
                               meaning: 'I certify that this layout is compliant with local and CFR 11 expectations'

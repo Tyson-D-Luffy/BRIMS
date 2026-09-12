@@ -62,8 +62,19 @@ export default function RejectedBatchSheetRequests() {
       ]);
 
       if (batchesRes.data.success) {
-        // Only keep REJECTED requests
-        const rejected = batchesRes.data.data.filter((b: BatchIssuance) => b.status === 'REJECTED');
+        // Keep REJECTED and DISCARDED requests (e.g. discarded due to version change)
+        const rejected = batchesRes.data.data.filter((b: BatchIssuance) => 
+          b.status === 'REJECTED' || 
+          b.status === 'DISCARDED' || 
+          b.status === ('Discarded due to version change' as any) ||
+          String(b.status || '').toUpperCase().includes('DISCARD') ||
+          b.rejectionReason === 'Discarded due to version change' ||
+          b.discardReason === 'Discarded due to version change' ||
+          String(b.rejectionReason || '').toUpperCase().includes('DISCARD') ||
+          String(b.discardReason || '').toUpperCase().includes('DISCARD') ||
+          Boolean(b.discardedAt) ||
+          Boolean(b.discardReason)
+        );
         setRejectedRequests(rejected);
       }
       if (productsRes.data.success) {
@@ -150,11 +161,23 @@ export default function RejectedBatchSheetRequests() {
       ? resolveUser(t1.userEmail || t1.userId, selectedBatch.issuedByName) 
       : resolveUser(selectedBatch.issuedBy || selectedBatch.issuedByName, selectedBatch.issuedByName || 'N/A');
 
-    // Resolve Step 2 (Rejection)
-    const t2 = timeline.find((t: any) => t.action === 'REJECT' || t.action === 'REJECT_BATCH_ISSUANCE' || t.newStatus === 'REJECTED');
-    const d2 = t2 ? new Date(t2.timestamp).toLocaleString() : new Date(selectedBatch.updatedAt || selectedBatch.createdAt).toLocaleString();
-    const u2 = t2 ? resolveUser(t2.userEmail || t2.userId, 'QA Reviewer') : resolveUser(selectedBatch.updatedBy, 'QA Reviewer');
-    const reasonForRejection = t2?.changeReason || selectedBatch.rejectionReason || 'No details provided';
+    // Resolve Step 2 (Rejection or Discard)
+    const t2 = timeline.find((t: any) => 
+      t.action === 'REJECT' || 
+      t.action === 'REJECT_BATCH_ISSUANCE' || 
+      t.action === 'DISCARD_BATCH_ISSUANCE' || 
+      t.newStatus === 'REJECTED' || 
+      t.newStatus === 'DISCARDED'
+    );
+    const isDiscard = selectedBatch.status === 'DISCARDED' || 
+                      t2?.action === 'DISCARD_BATCH_ISSUANCE' || 
+                      selectedBatch.rejectionReason === 'Discarded due to version change' ||
+                      selectedBatch.discardReason === 'Discarded due to version change';
+    const d2 = t2 ? new Date(t2.timestamp).toLocaleString() : new Date(selectedBatch.discardedAt || selectedBatch.updatedAt || selectedBatch.createdAt).toLocaleString();
+    const u2 = t2 
+      ? resolveUser(t2.userEmail || t2.userId, isDiscard ? (selectedBatch.discardedByName || 'System Operator') : 'QA Reviewer') 
+      : resolveUser(selectedBatch.discardedBy || selectedBatch.updatedBy, isDiscard ? (selectedBatch.discardedByName || 'System Operator') : 'QA Reviewer');
+    const reasonForRejection = t2?.changeReason || selectedBatch.rejectionReason || selectedBatch.discardReason || (isDiscard ? 'Discarded due to version change' : 'No details provided');
 
     const steps = [
       {
@@ -168,14 +191,16 @@ export default function RejectedBatchSheetRequests() {
         iconClass: "bg-emerald-50 border-emerald-500 text-emerald-600"
       },
       {
-        step: "2. QA Verification Rejected",
-        badge: "REJECTED",
-        badgeClass: "bg-rose-100 text-rose-800",
-        description: `Request rejected. Reason: ${reasonForRejection}`,
+        step: isDiscard ? "2. Discarded Due to Version Change" : "2. QA Verification Rejected",
+        badge: isDiscard ? "DISCARDED" : "REJECTED",
+        badgeClass: isDiscard ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800",
+        description: isDiscard ? `Request discarded due to version change. Reason: ${reasonForRejection}` : `Request rejected. Reason: ${reasonForRejection}`,
         date: d2,
         user: `${u2.employeeId !== 'N/A' ? u2.employeeId + ' - ' : ''}${u2.username}`,
         icon: UserX,
-        iconClass: "bg-rose-50 border-rose-500 text-rose-600 shadow-md shadow-rose-100"
+        iconClass: isDiscard 
+          ? "bg-amber-50 border-amber-500 text-amber-600 shadow-md shadow-amber-100" 
+          : "bg-rose-50 border-rose-500 text-rose-600 shadow-md shadow-rose-100"
       }
     ];
 
@@ -325,20 +350,41 @@ export default function RejectedBatchSheetRequests() {
                   ? new Date(iss.updatedAt).toLocaleString() 
                   : 'N/A';
 
+                const isDiscarded = iss.status === 'DISCARDED' || 
+                  String(iss.status || '').toUpperCase().includes('DISCARD') ||
+                  iss.rejectionReason === 'Discarded due to version change' || 
+                  iss.discardReason === 'Discarded due to version change' ||
+                  String(iss.rejectionReason || '').toUpperCase().includes('DISCARD') ||
+                  String(iss.discardReason || '').toUpperCase().includes('DISCARD') ||
+                  Boolean(iss.discardedAt) ||
+                  Boolean(iss.discardReason);
+                const reasonText = iss.rejectionReason || iss.discardReason || (isDiscarded ? 'Discarded due to version change' : 'No details provided');
+
                 return (
                   <TableRow key={iss.id} className="group hover:bg-slate-50/50 transition-all border-slate-50">
                     {/* Batch details with link to active batch details page */}
                     <TableCell className="pl-10 py-8">
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 group-hover:bg-slate-900 group-hover:text-white transition-colors border border-rose-100">
+                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors border ${
+                          isDiscarded 
+                            ? 'bg-amber-50 text-amber-600 border-amber-200 group-hover:bg-amber-600 group-hover:text-white' 
+                            : 'bg-rose-50 text-rose-600 border-rose-100 group-hover:bg-slate-900 group-hover:text-white'
+                        }`}>
                           <ClipboardX className="w-5 h-5" />
                         </div>
                         <div>
-                          <p className="font-black text-rose-600 hover:underline leading-tight uppercase cursor-pointer" onClick={() => navigate(`/batches/${iss.id}`)}>
-                            <HighlightText text={batchDetailLabel} search={searchQuery} />
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className={`font-black hover:underline leading-tight uppercase cursor-pointer ${isDiscarded ? 'text-amber-700' : 'text-rose-600'}`} onClick={() => navigate(`/batches/${iss.id}`)}>
+                              <HighlightText text={batchDetailLabel} search={searchQuery} />
+                            </p>
+                            {isDiscarded ? (
+                              <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] font-bold">DISCARDED</Badge>
+                            ) : (
+                              <Badge className="bg-rose-100 text-rose-800 border-rose-200 text-[10px] font-bold">REJECTED</Badge>
+                            )}
+                          </div>
                           <p className="text-[11px] text-slate-400 font-bold block mt-1 tracking-wider">
-                            ID: <HighlightText text={iss.id.substring(0, 8)} search={searchQuery} /> | REQUEST TYPE: {iss.requestType || 'NEW'}
+                            ID: <HighlightText text={iss.id.substring(0, 8)} search={searchQuery} /> | REQUEST TYPE: {iss.requestType || 'NEW'} | VER: {iss.version || '1.0'}
                           </p>
                           {(iss.dropdownBatchSeries || iss.batchNumberSeries) && (
                             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -371,10 +417,14 @@ export default function RejectedBatchSheetRequests() {
                       </div>
                     </TableCell>
 
-                    {/* Rejection Reason */}
+                    {/* Rejection / Discard Reason */}
                     <TableCell className="py-8 max-w-[240px]">
-                      <div className="text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-2.5 line-clamp-2" title={iss.rejectionReason || 'No details provided'}>
-                        <HighlightText text={iss.rejectionReason || 'No details provided'} search={searchQuery} />
+                      <div className={`text-xs font-semibold rounded-xl p-2.5 line-clamp-2 border ${
+                        isDiscarded 
+                          ? 'text-amber-800 bg-amber-50 border-amber-200' 
+                          : 'text-rose-700 bg-rose-50 border-rose-100'
+                      }`} title={reasonText}>
+                        <HighlightText text={reasonText} search={searchQuery} />
                       </div>
                     </TableCell>
 
