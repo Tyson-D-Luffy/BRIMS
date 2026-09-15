@@ -172,7 +172,7 @@ export function initializeBatchSheets(batchData: any): BatchSheetItem[] {
       activeLock: null,
       printedAt: isAlreadyPrinted ? (batchData.completedAt || batchData.updatedAt || batchData.createdAt || null) : null,
       printedBy: isAlreadyPrinted ? (batchData.completedBy || batchData.issuedBy || null) : null,
-      printedByName: isAlreadyPrinted ? (batchData.completedByName || batchData.issuedByName || 'Akshay Sharma') : null,
+      printedByName: isAlreadyPrinted ? (batchData.completedByName || batchData.issuedByName || null) : null,
       printedByEmployeeId: isAlreadyPrinted ? (batchData.completedByEmployeeId || 'N/A') : null,
       history: isAlreadyPrinted ? [
         {
@@ -180,9 +180,9 @@ export function initializeBatchSheets(batchData: any): BatchSheetItem[] {
           action: 'PRINT_COMPLETED',
           status: 'PRINTED',
           timestamp: batchData.completedAt || batchData.updatedAt || batchData.createdAt || new Date().toISOString(),
-          performedBy: batchData.completedByName || batchData.issuedByName || 'Akshay Sharma',
+          performedBy: batchData.completedByName || batchData.issuedByName || 'Operator',
           userId: batchData.completedBy || batchData.issuedBy || 'system',
-          userEmail: 'shakshay04@gmail.com',
+          userEmail: batchData.completedByEmail || batchData.issuedByEmail || 'system@brims.internal',
           userRole: batchData.completedByRole || 'ADMIN',
           employeeId: batchData.completedByEmployeeId || 'N/A',
           reason: 'Initial Batch Sheet Print',

@@ -8,20 +8,24 @@ const router = Router();
 const resolveLookupAction = (req: AuthRequest, record: any): string => {
   const newStatus = req.body?.status;
   const currentStatus = record?.status || 'DRAFT';
+  if (req.body?.isDeactivation || (currentStatus === 'ACTIVE' && newStatus === 'DRAFT' && !req.body?.code)) {
+    return 'deactivate';
+  }
   if (newStatus && newStatus !== currentStatus) {
     if (['PENDING_APPROVAL', 'REVIEW', 'UNDER_REVIEW'].includes(newStatus)) return 'submit';
     if (newStatus === 'ACTIVE') return ['INACTIVE', 'DEACTIVATED'].includes(currentStatus) ? 'activate' : 'approve';
     if (['INACTIVE', 'DEACTIVATED'].includes(newStatus)) return 'deactivate';
-    if (newStatus === 'DRAFT') return 'return';
+    if (newStatus === 'DRAFT') return currentStatus === 'ACTIVE' ? 'deactivate' : 'return';
   }
   return 'edit';
 };
 
 const resolveFormatAction = (req: AuthRequest, record: any): string => {
+  if (req.body?.isEditing || req.body?.action === 'EDIT_FORMAT_LAYOUT') return 'edit';
   const newStatus = req.body?.status;
-  if (newStatus === 'ACTIVE') return 'approve';
-  if (['UNDER_REVIEW', 'REVIEW', 'PENDING_APPROVAL'].includes(newStatus)) return 'submit';
-  if (newStatus === 'DRAFT') return 'return';
+  if (newStatus === 'ACTIVE' && record?.status !== 'ACTIVE') return 'approve';
+  if (['UNDER_REVIEW', 'REVIEW', 'PENDING_APPROVAL'].includes(newStatus) && record?.status !== newStatus) return 'submit';
+  if (newStatus === 'DRAFT' && record?.status !== 'DRAFT') return 'return';
   return 'edit';
 };
 
@@ -55,7 +59,7 @@ router.post(
     if (req.body?.id) {
       return authorizeWorkflowTransition("BATCH_NUMBER_FORMAT", resolveFormatAction)(req, res, next);
     }
-    return authorizePermissions(["format:create"])(req, res, next);
+    return authorizePermissions(["format:create", "format:edit"])(req, res, next);
   },
   BatchNumberEngineController.saveFormat
 );

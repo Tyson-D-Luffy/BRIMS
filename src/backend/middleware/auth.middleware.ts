@@ -16,7 +16,7 @@ export const ALL_ADMIN_PERMISSIONS = [
   "lookup:create", "lookup:edit", "lookup:submit", "lookup:approve", "lookup:activate", "lookup:deactivate",
   "op:issued", "op:ready_for_handover", "op:production_in_progress", "op:ready_for_qa_review", "op:completed", "op:return_for_correction",
   "department:create", "department:submit", "department:approve", "designation:create", "designation:submit", "designation:approve",
-  "batch_number:create", "batch_number:submit", "batch_number:approve", "format:create", "format:submit", "format:approve",
+  "batch_number:create", "batch_number:submit", "batch_number:approve", "format:create", "format:edit", "format:submit", "format:approve",
   "audit:view"
 ];
 

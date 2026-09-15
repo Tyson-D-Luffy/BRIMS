@@ -121,6 +121,8 @@ export default function BatchSheetRecordStatus() {
   const [previewPDFUrl, setPreviewPDFUrl] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewSheetLabel, setPreviewSheetLabel] = useState('');
+  const [previewBatch, setPreviewBatch] = useState<BatchIssuance | null>(null);
+  const [previewSheet, setPreviewSheet] = useState<BatchSheetItem | null>(null);
   const [generatingPreview, setGeneratingPreview] = useState(false);
 
   const fetchData = async () => {
@@ -230,6 +232,8 @@ export default function BatchSheetRecordStatus() {
   // Trigger preview for individual sheet
   const handlePreviewSheet = async (batch: BatchIssuance, sheet: BatchSheetItem) => {
     setGeneratingPreview(true);
+    setPreviewBatch(batch);
+    setPreviewSheet(sheet);
     setPreviewSheetLabel(`Sheet #${sheet.sequenceIndex + 1} (${sheet.batchNumber})`);
     try {
       const url = await generateSheetPDF(batch, sheet, false);
@@ -1165,11 +1169,11 @@ export default function BatchSheetRecordStatus() {
                                         <div className="text-[11px] text-slate-400 flex items-center gap-3 flex-wrap font-medium">
                                           {sheet.printedAt ? (
                                             <span>
-                                              Printed by <strong>{sheet.printedByName || 'Operator'}</strong> on {new Date(sheet.printedAt).toLocaleTimeString()} ({new Date(sheet.printedAt).toLocaleDateString()})
+                                              Printed by <strong>{getUserFullNameWithDesignation(sheet.printedByName || sheet.printedBy, users)}</strong> on {new Date(sheet.printedAt).toLocaleTimeString()} ({new Date(sheet.printedAt).toLocaleDateString()})
                                             </span>
                                           ) : sheet.activeLock ? (
                                             <span className="text-amber-700 font-bold flex items-center gap-1">
-                                              <Lock className="w-3 h-3" /> Locked by {sheet.activeLock.lockedByName || 'Operator'}
+                                              <Lock className="w-3 h-3" /> Locked by {getUserFullNameWithDesignation(sheet.activeLock.lockedByName || sheet.activeLock.lockedBy, users)}
                                             </span>
                                           ) : sheet.interruptedReason ? (
                                             <span className="text-rose-600 font-bold">
@@ -1527,37 +1531,34 @@ export default function BatchSheetRecordStatus() {
       </Dialog>
 
       {/* PDF Preview Modal */}
-      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-5xl h-[90vh] p-0 overflow-hidden rounded-[32px] border-none bg-slate-900 flex flex-col">
-          <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-white">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-indigo-400" />
-              <h3 className="font-bold text-sm tracking-wide">
-                Certified Sheet Preview: {previewSheetLabel}
-              </h3>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsPreviewOpen(false)}
-              className="text-slate-400 hover:text-white rounded-full h-8 px-3"
-            >
-              Close
-            </Button>
-          </div>
-          <div className="flex-1 bg-slate-950 p-2 overflow-hidden">
-            {previewPDFUrl && (
-              <SecurePDFViewer
-                fileUrl={previewPDFUrl}
-                onClose={() => setIsPreviewOpen(false)}
-                title={previewSheetLabel}
-                hideOverlays={true}
-                hideOverlayPanel={true}
-              />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {isPreviewOpen && previewPDFUrl && (
+        <SecurePDFViewer
+          fileUrl={previewPDFUrl}
+          onClose={() => {
+            setIsPreviewOpen(false);
+            setPreviewPDFUrl(null);
+          }}
+          title={previewSheetLabel ? `Batch Sheet Preview: ${previewSheetLabel}` : 'Batch Sheet Preview'}
+          batchInfo={previewBatch ? `Product: ${products.find(p => p.id === previewBatch.productId)?.title || ''} | Status: ${previewBatch.status || 'ISSUED'}` : undefined}
+          batchNo={previewSheet?.batchNumber || previewBatch?.batchNumberSeries || previewBatch?.batchNumber}
+          dropdownBatchSeries={(previewBatch as any)?.dropdownBatchSeries}
+          singlePagesBatchNumber={(previewBatch as any)?.singlePagesBatchNumber}
+          batchStatus={previewBatch?.status || 'ISSUED'}
+          issuedBy={previewBatch ? getBatchIssuedByString(previewBatch, users) : undefined}
+          dateOfIssue={previewBatch?.createdAt || previewBatch?.manufacturingDate}
+          timeOfIssue={previewBatch?.createdAt || previewBatch?.manufacturingDate}
+          printedBy={previewSheet ? getSheetPrintedByString(previewSheet, user, users) : getUserFullNameWithDesignation(user)}
+          printedDateTime={previewSheet?.printedAt || new Date().toISOString()}
+          requestId={previewBatch && previewSheet ? formatRequestId(
+            previewSheet.batchNumber,
+            previewBatch.createdAt || previewBatch.manufacturingDate,
+            previewBatch.batchNumberSeries,
+            previewBatch.id
+          ) : undefined}
+          users={users}
+          mode="batch"
+        />
+      )}
 
       {/* QA Approval Dialog */}
       <Dialog open={isApproveDialogOpen} onOpenChange={setIsApproveDialogOpen}>

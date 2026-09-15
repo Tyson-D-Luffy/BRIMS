@@ -517,34 +517,13 @@ export default function BatchDetail() {
   const stageLookup = masters.find(m => m.type === 'stage' && (m.code === selectedStageCode || m.name === selectedStageCode));
   const processLookup = masters.find(m => m.type === 'process' && (m.code === selectedTypeCode || m.name === selectedTypeCode));
 
-  // Helper to resolve user's display details
-  const resolveUser = (userIdOrEmail: string | undefined, fallbackName: string = 'N/A') => {
-    if (!userIdOrEmail) return { employeeId: 'N/A', username: fallbackName };
-    const found = users.find(u => 
-      u.uid === userIdOrEmail || 
-      u.id === userIdOrEmail || 
-      u.email === userIdOrEmail || 
-      u.username === userIdOrEmail ||
-      (typeof userIdOrEmail === 'string' && u.email?.toLowerCase() === userIdOrEmail.toLowerCase())
-    );
-    if (found) {
-      return {
-        employeeId: found.employeeId || 'N/A',
-        username: found.username || found.displayName || found.email?.split('@')[0] || 'Unknown'
-      };
-    }
-    return {
-      employeeId: 'N/A',
-      username: userIdOrEmail.includes('@') ? userIdOrEmail.split('@')[0] : userIdOrEmail
-    };
-  };
-
   // Step 1: Initiate Request
   const step1Timeline = timeline.find((t: any) => t.action === 'CREATE' || t.action === 'ISSUE_BATCH' || t.newStatus === 'DRAFT' || t.newStatus === 'PENDING_REVIEW') || timeline[0];
   const step1DateStr = step1Timeline ? new Date(step1Timeline.timestamp).toLocaleString() : (batch.createdAt ? new Date(batch.createdAt).toLocaleString() : 'N/A');
-  const step1UserAndId = step1Timeline 
-    ? resolveUser(step1Timeline.userEmail || step1Timeline.userId, batch.issuedByName) 
-    : resolveUser(batch.issuedBy || batch.issuedByName, batch.issuedByName || 'Akshay Sharma');
+  const step1UserStr = getUserFullNameWithDesignation(
+    step1Timeline?.userEmail || step1Timeline?.userId || step1Timeline?.userName || batch.issuedBy || batch.issuedByName,
+    users
+  );
 
   // Step 2 & 3: QA Review & Sign-off
   const step2Timeline = timeline.find((t: any) => t.action === 'APPROVE' || t.action === 'APPROVE_BATCH' || t.newStatus === 'APPROVED' || t.newStatus === 'REJECTED');
@@ -553,14 +532,17 @@ export default function BatchDetail() {
   const step2DateStr = step2Completed 
     ? (step2Timeline ? new Date(step2Timeline.timestamp).toLocaleString() : new Date(batch.updatedAt || batch.createdAt).toLocaleString())
     : 'N/A';
-  const step2UserAndId = step2Completed
-    ? (step2Timeline ? resolveUser(step2Timeline.userEmail || step2Timeline.userId, 'QA Reviewer') : resolveUser(batch.updatedBy, 'QA Reviewer'))
-    : { employeeId: 'N/A', username: step2Active ? 'Awaiting QA' : 'N/A' };
+  const step2UserStr = step2Completed
+    ? getUserFullNameWithDesignation(
+        step2Timeline?.userEmail || step2Timeline?.userId || step2Timeline?.userName || batch.approvedBy || batch.approvedByName || batch.updatedBy,
+        users
+      )
+    : '';
 
   const step3Completed = step2Completed;
   const step3Active = step2Active;
   const step3DateStr = step2DateStr;
-  const step3UserAndId = step2UserAndId;
+  const step3UserStr = step2UserStr;
 
   // Step 4: Batch Sheet Issuance
   const step4Timeline = timeline.find((t: any) => t.newStatus === 'ISSUED' || t.action === 'ISSUE' || t.action === 'ISSUE_BATCH');
@@ -569,9 +551,12 @@ export default function BatchDetail() {
   const step4DateStr = step4Completed
     ? (step4Timeline ? new Date(step4Timeline.timestamp).toLocaleString() : new Date(batch.createdAt).toLocaleString())
     : 'N/A';
-  const step4UserAndId = step4Completed
-    ? (step4Timeline ? resolveUser(step4Timeline.userEmail || step4Timeline.userId, batch.issuedByName) : resolveUser(batch.issuedBy || batch.issuedByName, batch.issuedByName || 'Akshay Sharma'))
-    : { employeeId: 'N/A', username: step4Active ? 'Awaiting Issuance' : 'N/A' };
+  const step4UserStr = step4Completed
+    ? getUserFullNameWithDesignation(
+        step4Timeline?.userEmail || step4Timeline?.userId || step4Timeline?.userName || batch.issuedBy || batch.issuedByName,
+        users
+      )
+    : '';
 
   // Step 5: Ready for Production Handover
   const step5Timeline = timeline.find((t: any) => t.newStatus === 'READY_FOR_PRODUCTION_HANDOVER');
@@ -580,9 +565,12 @@ export default function BatchDetail() {
   const step5DateStr = step5Completed
     ? (step5Timeline ? new Date(step5Timeline.timestamp).toLocaleString() : (batch.updatedAt ? new Date(batch.updatedAt).toLocaleString() : 'N/A'))
     : 'N/A';
-  const step5UserAndId = step5Completed
-    ? (step5Timeline ? resolveUser(step5Timeline.userEmail || step5Timeline.userId, 'QA Officer') : resolveUser(batch.updatedBy, 'QA Officer'))
-    : { employeeId: 'N/A', username: step5Active ? 'Awaiting Handover' : 'N/A' };
+  const step5UserStr = step5Completed
+    ? getUserFullNameWithDesignation(
+        step5Timeline?.userEmail || step5Timeline?.userId || step5Timeline?.userName || batch.handoverPreparedBy || batch.updatedBy,
+        users
+      )
+    : '';
 
   // Step 6: Handover to Production
   const step6Timeline = timeline.find((t: any) => t.newStatus === 'HANDED_OVER');
@@ -591,9 +579,12 @@ export default function BatchDetail() {
   const step6DateStr = step6Completed
     ? (step6Timeline ? new Date(step6Timeline.timestamp).toLocaleString() : (batch.updatedAt ? new Date(batch.updatedAt).toLocaleString() : 'N/A'))
     : 'N/A';
-  const step6UserAndId = step6Completed
-    ? (step6Timeline ? resolveUser(step6Timeline.userEmail || step6Timeline.userId, 'QA Officer') : resolveUser(batch.updatedBy, 'QA Officer'))
-    : { employeeId: 'N/A', username: step6Active ? 'Awaiting Collection' : 'N/A' };
+  const step6UserStr = step6Completed
+    ? getUserFullNameWithDesignation(
+        step6Timeline?.userEmail || step6Timeline?.userId || step6Timeline?.userName || batch.handedOverBy || batch.updatedBy,
+        users
+      )
+    : '';
 
   // Step 7: Received by Production & In Progress
   const step7Timeline = timeline.find((t: any) => t.newStatus === 'PRODUCTION_IN_PROGRESS');
@@ -602,9 +593,12 @@ export default function BatchDetail() {
   const step7DateStr = step7Completed
     ? (step7Timeline ? new Date(step7Timeline.timestamp).toLocaleString() : (batch.updatedAt ? new Date(batch.updatedAt).toLocaleString() : 'N/A'))
     : 'N/A';
-  const step7UserAndId = step7Completed
-    ? (step7Timeline ? resolveUser(step7Timeline.userEmail || step7Timeline.userId, 'Production Operator') : resolveUser(batch.updatedBy, 'Production Operator'))
-    : { employeeId: 'N/A', username: step7Active ? 'Production in Progress' : 'N/A' };
+  const step7UserStr = step7Completed
+    ? getUserFullNameWithDesignation(
+        step7Timeline?.userEmail || step7Timeline?.userId || step7Timeline?.userName || batch.productionReceivedBy || batch.updatedBy,
+        users
+      )
+    : '';
 
   // Step 8: Sent back for QA Review
   const step8Timeline = timeline.find((t: any) => t.newStatus === 'READY_FOR_QA_REVIEW');
@@ -613,9 +607,12 @@ export default function BatchDetail() {
   const step8DateStr = step8Completed
     ? (step8Timeline ? new Date(step8Timeline.timestamp).toLocaleString() : (batch.updatedAt ? new Date(batch.updatedAt).toLocaleString() : 'N/A'))
     : 'N/A';
-  const step8UserAndId = step8Completed
-    ? (step8Timeline ? resolveUser(step8Timeline.userEmail || step8Timeline.userId, 'QA Reviewer') : resolveUser(batch.updatedBy, 'QA Reviewer'))
-    : { employeeId: 'N/A', username: step8Active ? 'Awaiting QA Received' : 'N/A' };
+  const step8UserStr = step8Completed
+    ? getUserFullNameWithDesignation(
+        step8Timeline?.userEmail || step8Timeline?.userId || step8Timeline?.userName || batch.qaReviewSubmittedBy || batch.updatedBy,
+        users
+      )
+    : '';
 
   // Step 9: Final Completion
   const step9Timeline = timeline.find((t: any) => t.newStatus === 'COMPLETED' || t.action === 'COMPLETE');
@@ -624,9 +621,12 @@ export default function BatchDetail() {
   const step9DateStr = step9Completed
     ? (step9Timeline ? new Date(step9Timeline.timestamp).toLocaleString() : (batch.completedAt ? new Date(batch.completedAt).toLocaleString() : 'N/A'))
     : 'N/A';
-  const step9UserAndId = step9Completed
-    ? (step9Timeline ? resolveUser(step9Timeline.userEmail || step9Timeline.userId, 'QA Reviewer') : resolveUser(batch.completedBy || batch.updatedBy, 'QA Reviewer'))
-    : { employeeId: 'N/A', username: step9Active ? 'Awaiting Final Verification' : 'N/A' };
+  const step9UserStr = step9Completed
+    ? getUserFullNameWithDesignation(
+        step9Timeline?.userEmail || step9Timeline?.userId || step9Timeline?.userName || batch.completedBy || batch.qaReceivedBy || batch.updatedBy,
+        users
+      )
+    : '';
 
   return (
     <div className="space-y-8 max-w-[1600px] mx-auto pb-20">
@@ -922,6 +922,7 @@ export default function BatchDetail() {
                 batch={batch}
                 productMaster={productMaster}
                 onBatchUpdated={fetchData}
+                users={users}
                 onPreviewSheet={(sheet) => {
                   handlePreviewPDF();
                 }}
@@ -933,10 +934,10 @@ export default function BatchDetail() {
           <Card className="border-none shadow-sm rounded-3xl overflow-hidden bg-white">
             <CardHeader className="bg-slate-50/50 border-b border-slate-100 p-8">
               <CardTitle className="text-xl font-bold flex items-center gap-2">
-                <ClipboardList className="w-6 h-6 text-indigo-600" />
+                <ClipboardList className="w-5 h-5 text-indigo-600" />
                 Batch Sheet Issuance Workflow Chart
               </CardTitle>
-              <CardDescription className="text-slate-500">
+              <CardDescription className="text-sm">
                 Visual interactive chart mapping compliance track under 21 CFR Part 11 requirements.
               </CardDescription>
             </CardHeader>
@@ -965,7 +966,7 @@ export default function BatchDetail() {
                       <div>
                         <span className="text-slate-400 font-medium block">Performed By</span>
                         <span className="text-slate-700 font-bold block">
-                          {step1UserAndId.employeeId !== 'N/A' ? `${step1UserAndId.employeeId} - ` : ''}{step1UserAndId.username}
+                          {step1UserStr}
                         </span>
                       </div>
                     </div>
@@ -1008,7 +1009,7 @@ export default function BatchDetail() {
                         <div>
                           <span className="text-slate-400 font-medium block">Performed By</span>
                           <span className="text-slate-700 font-bold block">
-                            {step2UserAndId.employeeId !== 'N/A' ? `${step2UserAndId.employeeId} - ` : ''}{step2UserAndId.username}
+                            {step2UserStr}
                           </span>
                         </div>
                       </div>
@@ -1057,7 +1058,7 @@ export default function BatchDetail() {
                         <div>
                           <span className="text-slate-400 font-medium block">Performed By</span>
                           <span className="text-slate-700 font-bold block">
-                            {step3UserAndId.employeeId !== 'N/A' ? `${step3UserAndId.employeeId} - ` : ''}{step3UserAndId.username}
+                            {step3UserStr}
                           </span>
                         </div>
                       </div>
@@ -1106,7 +1107,7 @@ export default function BatchDetail() {
                         <div>
                           <span className="text-slate-400 font-medium block">Performed By</span>
                           <span className="text-slate-700 font-bold block">
-                            {step4UserAndId.employeeId !== 'N/A' ? `${step4UserAndId.employeeId} - ` : ''}{step4UserAndId.username}
+                            {step4UserStr}
                           </span>
                         </div>
                       </div>
@@ -1155,7 +1156,7 @@ export default function BatchDetail() {
                         <div>
                           <span className="text-slate-400 font-medium block">Performed By</span>
                           <span className="text-slate-700 font-bold block">
-                            {step5UserAndId.employeeId !== 'N/A' ? `${step5UserAndId.employeeId} - ` : ''}{step5UserAndId.username}
+                            {step5UserStr}
                           </span>
                         </div>
                       </div>
@@ -1204,7 +1205,7 @@ export default function BatchDetail() {
                         <div>
                           <span className="text-slate-400 font-medium block">Performed By</span>
                           <span className="text-slate-700 font-bold block">
-                            {step6UserAndId.employeeId !== 'N/A' ? `${step6UserAndId.employeeId} - ` : ''}{step6UserAndId.username}
+                            {step6UserStr}
                           </span>
                         </div>
                       </div>
@@ -1253,7 +1254,7 @@ export default function BatchDetail() {
                         <div>
                           <span className="text-slate-400 font-medium block">Performed By</span>
                           <span className="text-slate-700 font-bold block">
-                            {step7UserAndId.employeeId !== 'N/A' ? `${step7UserAndId.employeeId} - ` : ''}{step7UserAndId.username}
+                            {step7UserStr}
                           </span>
                         </div>
                       </div>
@@ -1302,7 +1303,7 @@ export default function BatchDetail() {
                         <div>
                           <span className="text-slate-400 font-medium block">Performed By</span>
                           <span className="text-slate-700 font-bold block">
-                            {step8UserAndId.employeeId !== 'N/A' ? `${step8UserAndId.employeeId} - ` : ''}{step8UserAndId.username}
+                            {step8UserStr}
                           </span>
                         </div>
                       </div>
@@ -1347,7 +1348,7 @@ export default function BatchDetail() {
                         <div>
                           <span className="text-slate-400 font-medium block">Performed By</span>
                           <span className="text-slate-700 font-bold block">
-                            {step9UserAndId.employeeId !== 'N/A' ? `${step9UserAndId.employeeId} - ` : ''}{step9UserAndId.username}
+                            {step9UserStr}
                           </span>
                         </div>
                       </div>
@@ -1405,7 +1406,7 @@ export default function BatchDetail() {
             setPreviewUrl(null);
           }}
           title={`Batch Sheet Preview: ${batch.batchNumber}`}
-          batchInfo={`Product: ${productMaster?.title || ''} | Stage: ${productMaster?.stage || ''}`}
+          batchInfo={`Product: ${productMaster?.title || ''} | Stage: ${productMaster?.stage || ''} | Status: ${batch.status}`}
           batchNo={batch.batchNumberSeries || batch.batchNumber}
           dropdownBatchSeries={(batch as any).dropdownBatchSeries}
           singlePagesBatchNumber={(batch as any).singlePagesBatchNumber}

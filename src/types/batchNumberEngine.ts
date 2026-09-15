@@ -22,6 +22,9 @@ export interface BatchNumberFormat {
   createdAt: string;
   updatedBy?: string;
   updatedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  history?: any[];
   approvalHistory?: {
     status: FormatStatus;
     user: string;
@@ -71,7 +74,7 @@ export interface MasterItem {
   code: string;
   name?: string;
   productId?: string;
-  status?: 'DRAFT' | 'REVIEW' | 'APPROVAL' | 'ACTIVE' | 'DEACTIVATED';
+  status?: 'DRAFT' | 'REVIEW' | 'APPROVAL' | 'ACTIVE' | 'DEACTIVATED' | 'INACTIVE';
   approvedBy?: string;
   approvedDate?: string;
   comments?: string;

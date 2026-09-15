@@ -65,6 +65,7 @@ export const ALL_SYSTEM_PERMISSIONS: PermissionDefinition[] = [
   { id: 'batch_number:submit', name: 'Submit Batch Number Record', category: 'Batch Number Engine', description: 'Submit generated batch numbers for QA review.' },
   { id: 'batch_number:approve', name: 'Approve Batch Number Record', category: 'Batch Number Engine', description: 'Authorize batch number allocation.' },
   { id: 'format:create', name: 'Create Format Template', category: 'Batch Number Engine', description: 'Build configurable batch number format algorithms.' },
+  { id: 'format:edit', name: 'Edit Format Layout', category: 'Batch Number Engine', description: 'Modify and update existing batch number format layouts.' },
   { id: 'format:submit', name: 'Submit Format Template', category: 'Batch Number Engine', description: 'Submit format templates for QA certification.' },
   { id: 'format:approve', name: 'Approve Format Template', category: 'Batch Number Engine', description: 'Certify and lock batch number formats.' },
 
@@ -127,11 +128,13 @@ export const DEFAULT_DESIGNATION_PROFILES: DefaultDesignationProfile[] = [
       'op:return_for_correction',
       // Master Lookups
       'lookup:create',
+      'lookup:edit',
       'lookup:submit',
       // Batch Number Engine
       'batch_number:create',
       'batch_number:submit',
       'format:create',
+      'format:edit',
       'format:submit',
       // Department & Designation
       'department:create',
@@ -181,6 +184,7 @@ export const DEFAULT_DESIGNATION_PROFILES: DefaultDesignationProfile[] = [
       'batch_number:create',
       'batch_number:submit',
       'format:create',
+      'format:edit',
       'format:submit',
       // Department & Designation
       'department:create',

@@ -277,7 +277,7 @@ export const WORKFLOW_DEFINITIONS: Record<WorkflowEntityType, Record<string, Wor
       stepName: 'Format Review',
       sequence: 2,
       allowedRoles: ['QA_INCHARGE', 'QA_MANAGER', 'ADMIN'],
-      reviewPermissions: ['format:submit', 'format:approve'],
+      reviewPermissions: ['format:submit', 'format:approve', 'format:edit', 'format:create'],
       approvePermissions: ['format:approve'],
       allowedReturnSteps: [{ stepId: 'DRAFT', label: 'Return to Format Author (Draft)', roleName: 'Format Author' }],
       defaultReturnStep: 'DRAFT',
@@ -948,9 +948,9 @@ export const WORKFLOW_STAGE_DEFINITIONS: Record<WorkflowEntityType, Record<strin
     'DRAFT': {
       state: 'DRAFT',
       stageName: 'Format Builder Draft',
-      stagePermissions: ['format:create'],
+      stagePermissions: ['format:create', 'format:edit'],
       actions: {
-        'edit': { label: 'Edit Format', actionPermission: 'format:create' },
+        'edit': { label: 'Edit Format', actionPermission: ['format:edit', 'format:create'], requiresReason: true, requiresESignature: true },
         'submit': { label: 'Submit Format for Review', actionPermission: 'format:submit', nextState: 'UNDER_REVIEW' },
         'delete': { label: 'Delete Format', actionPermission: 'format:create' }
       }
@@ -958,8 +958,9 @@ export const WORKFLOW_STAGE_DEFINITIONS: Record<WorkflowEntityType, Record<strin
     'UNDER_REVIEW': {
       state: 'UNDER_REVIEW',
       stageName: 'Format Review & Approval',
-      stagePermissions: ['format:approve'],
+      stagePermissions: ['format:approve', 'format:edit', 'format:create'],
       actions: {
+        'edit': { label: 'Edit Format', actionPermission: ['format:edit', 'format:create'], requiresReason: true, requiresESignature: true },
         'approve': { label: 'Approve & Activate', actionPermission: 'format:approve', nextState: 'ACTIVE' },
         'activate': { label: 'Activate Format', actionPermission: 'format:approve', nextState: 'ACTIVE' },
         'return': { label: 'Return to Draft', actionPermission: 'format:approve', nextState: 'DRAFT' },
@@ -969,8 +970,9 @@ export const WORKFLOW_STAGE_DEFINITIONS: Record<WorkflowEntityType, Record<strin
     'ACTIVE': {
       state: 'ACTIVE',
       stageName: 'Active Format',
-      stagePermissions: ['format:approve'],
+      stagePermissions: ['format:approve', 'format:edit', 'format:create'],
       actions: {
+        'edit': { label: 'Edit Format', actionPermission: ['format:edit', 'format:create'], requiresReason: true, requiresESignature: true },
         'delete': { label: 'Delete Format', actionPermission: 'format:approve' }
       }
     }
@@ -1060,30 +1062,32 @@ export const WORKFLOW_STAGE_DEFINITIONS: Record<WorkflowEntityType, Record<strin
       stageName: 'Active Lookup',
       stagePermissions: ['lookup:deactivate', 'lookup:edit', 'lookup:activate'],
       actions: {
-        'edit': { label: 'Edit Lookup (Resets to Draft)', actionPermission: 'lookup:edit', nextState: 'DRAFT' },
-        'deactivate': { label: 'Deactivate Lookup', actionPermission: 'lookup:deactivate', nextState: 'DEACTIVATED' }
+        'edit': { label: 'Edit Lookup (Resets to Draft)', actionPermission: ['lookup:edit', 'lookup:create'], nextState: 'DRAFT' },
+        'deactivate': { label: 'Deactivate Lookup (Resets to Draft)', actionPermission: 'lookup:deactivate', nextState: 'DRAFT' }
       }
     },
     'INACTIVE': {
       state: 'INACTIVE',
       stageName: 'Inactive Lookup',
-      stagePermissions: ['lookup:activate', 'lookup:edit'],
+      stagePermissions: ['lookup:activate', 'lookup:edit', 'lookup:create', 'lookup:submit'],
       actions: {
-        'activate': { label: 'Activate Lookup', actionPermission: 'lookup:activate', nextState: 'ACTIVE' },
-        'reactivate': { label: 'Re-activate Lookup', actionPermission: 'lookup:activate', nextState: 'DRAFT' },
-        'return': { label: 'Re-activate to Draft', actionPermission: 'lookup:activate', nextState: 'DRAFT' },
-        'edit': { label: 'Edit Lookup', actionPermission: 'lookup:edit' }
+        'activate': { label: 'Activate Lookup', actionPermission: ['lookup:activate', 'lookup:approve'], nextState: 'ACTIVE' },
+        'reactivate': { label: 'Re-activate Lookup', actionPermission: ['lookup:activate', 'lookup:edit'], nextState: 'DRAFT' },
+        'return': { label: 'Re-activate to Draft', actionPermission: ['lookup:activate', 'lookup:edit'], nextState: 'DRAFT' },
+        'submit': { label: 'Submit Lookup', actionPermission: ['lookup:submit', 'lookup:create'], nextState: 'REVIEW' },
+        'edit': { label: 'Edit Lookup', actionPermission: ['lookup:edit', 'lookup:create'], nextState: 'DRAFT' }
       }
     },
     'DEACTIVATED': {
       state: 'DEACTIVATED',
       stageName: 'Deactivated Lookup',
-      stagePermissions: ['lookup:activate', 'lookup:edit'],
+      stagePermissions: ['lookup:activate', 'lookup:edit', 'lookup:create', 'lookup:submit'],
       actions: {
-        'activate': { label: 'Activate Lookup', actionPermission: 'lookup:activate', nextState: 'ACTIVE' },
-        'reactivate': { label: 'Re-activate Lookup', actionPermission: 'lookup:activate', nextState: 'DRAFT' },
-        'return': { label: 'Re-activate to Draft', actionPermission: 'lookup:activate', nextState: 'DRAFT' },
-        'edit': { label: 'Edit Lookup', actionPermission: 'lookup:edit' }
+        'activate': { label: 'Activate Lookup', actionPermission: ['lookup:activate', 'lookup:approve'], nextState: 'ACTIVE' },
+        'reactivate': { label: 'Re-activate Lookup', actionPermission: ['lookup:activate', 'lookup:edit'], nextState: 'DRAFT' },
+        'return': { label: 'Re-activate to Draft', actionPermission: ['lookup:activate', 'lookup:edit'], nextState: 'DRAFT' },
+        'submit': { label: 'Submit Lookup', actionPermission: ['lookup:submit', 'lookup:create'], nextState: 'REVIEW' },
+        'edit': { label: 'Edit Lookup', actionPermission: ['lookup:edit', 'lookup:create'], nextState: 'DRAFT' }
       }
     }
   },

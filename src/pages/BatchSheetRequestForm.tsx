@@ -44,6 +44,7 @@ import { SignatureDialog } from '../components/SignatureDialog';
 import { cn } from '../lib/utils';
 import { LoadingPage } from '../components/LoadingSpinner';
 import { generateRequestPreviewPDF, formatRequestId } from '../lib/pdf-generator';
+import { getUserFullNameWithDesignation } from '../lib/batch-sheets';
 import { SecurePDFViewer } from '../components/SecurePDFViewer';
 import { PDFDocument } from 'pdf-lib';
 
@@ -737,7 +738,8 @@ export default function BatchSheetRequestForm() {
         requestType: requestType,
         printCounts: getPrintCounts(batchNum, existingBatches),
         requestId: 'PENDING',
-        isForPrint: false
+        isForPrint: false,
+        onlyShowBatchNoOverlay: true
       });
 
       if (url) {
@@ -1390,7 +1392,7 @@ export default function BatchSheetRequestForm() {
           issuedBy="QA Incharge (Krishan Kumar)"
           dateOfIssue={new Date().toISOString()}
           timeOfIssue={new Date().toISOString()}
-          printedBy={user ? `${user.displayName || user.username || 'Unknown'} (${user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase() : 'Admin'})` : 'Akshay Sharma (Admin)'}
+          printedBy={getUserFullNameWithDesignation(user)}
           printedDateTime={new Date().toISOString()}
           requestId={formatRequestId(
             batchNumberSeries || identifiedMaster?.batchNumberSeries || 'MK14-001',
@@ -1399,6 +1401,7 @@ export default function BatchSheetRequestForm() {
             'PENDING'
           )}
           mode="request"
+          onlyShowBatchNoOverlay={true}
         />
       )}
 

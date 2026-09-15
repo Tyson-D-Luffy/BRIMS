@@ -121,7 +121,8 @@ const PERMISSIONS_LIST = [
   { id: "batch_number:approve", name: "Approve Batch Number", category: "Batch Number Creator", derivedReturnInfo: "✓ Includes derived authority to Return record to Submitter" },
 
   // Format Builder Permissions
-  { id: "format:create", name: "Create/Edit Format Layout", category: "Format Builder" },
+  { id: "format:create", name: "Create Format Layout", category: "Format Builder" },
+  { id: "format:edit", name: "Edit Format Layout", category: "Format Builder" },
   { id: "format:submit", name: "Submit Format Layout", category: "Format Builder", derivedReturnInfo: "✓ Includes derived authority to Return layout to Creator" },
   { id: "format:approve", name: "Approve Format Layout", category: "Format Builder", derivedReturnInfo: "✓ Includes derived authority to Return layout to Submitter" },
 

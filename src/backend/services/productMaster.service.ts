@@ -8,22 +8,20 @@ import { canPerformWorkflowAction } from "../../lib/workflowEngine.ts";
 
 export function getProductLogUser(user: any): string {
   if (!user) return "system";
-  if (user.employeeId && user.username) {
-    return `${user.employeeId} - ${user.username}`;
+
+  const empId = user.employeeId;
+  const rawName = user.displayName || user.name || user.username || (user.email ? user.email.split('@')[0] : 'User');
+  const cleanName = String(rawName).replace(/\s*\([^)]*\)\s*$/, '').trim();
+  let designation = user.designation || user.designationName || user.functionalRole;
+  if (!designation && user.role) {
+    designation = user.role.toUpperCase() === 'ADMIN' ? 'System Administrator' : user.role.replace(/_/g, ' ');
   }
-  if (user.email && user.email.toLowerCase() === 'shakshay04@gmail.com') {
-    return "Admin - admin";
+
+  const nameWithDesig = designation ? `${cleanName} (${designation})` : cleanName;
+  if (empId) {
+    return `${empId} - ${nameWithDesig}`;
   }
-  if (user.employeeId) {
-    return `${user.employeeId} - ${user.displayName || user.username || 'user'}`;
-  }
-  if (user.username) {
-    return user.username;
-  }
-  if (user.email) {
-    return user.email.split('@')[0];
-  }
-  return "system";
+  return nameWithDesig;
 }
 
 export class ProductMasterService {

@@ -294,12 +294,22 @@ export class BatchNumberEngineController {
       let usedMeaning = signatureMeaning || 'Authorized format layout signature';
 
       if (docId) {
+        const isEditAction = !!fData.isEditing || fData.action === 'EDIT_FORMAT_LAYOUT';
+        const actionType = isEditAction
+          ? 'EDIT_FORMAT_LAYOUT'
+          : (finalFormatData.status === 'ACTIVE' ? 'ACTIVATE_FORMAT' : 'SUBMIT_FORMAT_REVIEW');
+        const reasonText = fData.changeReason || `Updated Format sequence for: ${finalFormatData.formatCode}`;
+
+        delete finalFormatData.isEditing;
+        delete finalFormatData.action;
+        delete finalFormatData.changeReason;
+
         if (password && user) {
           await SignatureService.verifyCredentials(user.email, password);
           const sigResult = await SignatureService.signAction(
             user.uid,
             user.email || 'unknown',
-            finalFormatData.status === 'ACTIVE' ? 'ACTIVATE_FORMAT' : 'SUBMIT_FORMAT_REVIEW',
+            actionType,
             'Batch Number Format',
             docId,
             usedMeaning,
@@ -318,12 +328,12 @@ export class BatchNumberEngineController {
           await AuditService.logAction(
             user.uid,
             user.email || 'unknown',
-            finalFormatData.status === 'ACTIVE' ? 'ACTIVATE_FORMAT' : 'SUBMIT_FORMAT_REVIEW',
+            actionType,
             docId,
             'Batch Number Generation Engine',
             oldVal,
             finalFormatData,
-            `Updated Format sequence for: ${finalFormatData.formatCode}`,
+            reasonText,
             null,
             signatureId,
             signatureId ? usedMeaning : undefined,

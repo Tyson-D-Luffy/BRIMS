@@ -66,6 +66,7 @@ import { SignatureDialog } from '../components/SignatureDialog';
 import { SecurePDFViewer } from '../components/SecurePDFViewer';
 import { BatchSheetMasterVersionUpdateImpactModal } from '../components/BatchSheetMasterVersionUpdateImpactModal';
 import { getWorkflowActionStatus } from '../lib/workflowEngine';
+import { getUserFullNameWithDesignation } from '../lib/batch-sheets';
 
 export default function BatchSheetMasterDetail() {
   const { id } = useParams<{ id: string }>();
@@ -175,20 +176,7 @@ export default function BatchSheetMasterDetail() {
 
   const getUserName = (uidOrStr: string) => {
     if (!uidOrStr) return 'System';
-    const found = users.find(u => u.uid === uidOrStr || u.id === uidOrStr || u.email === uidOrStr || u.username === uidOrStr);
-    if (found) {
-      if (found.employeeId && found.username) {
-        return `${found.employeeId} - ${found.username}`;
-      }
-      if (found.employeeId) {
-        return `${found.employeeId} - ${found.username || found.displayName || found.email?.split('@')[0]}`;
-      }
-      return found.username || found.displayName || found.email?.split('@')[0] || uidOrStr;
-    }
-    if (uidOrStr.includes('@')) {
-      return uidOrStr.split('@')[0];
-    }
-    return uidOrStr;
+    return getUserFullNameWithDesignation(uidOrStr, users);
   };
 
   useEffect(() => {
@@ -578,26 +566,26 @@ export default function BatchSheetMasterDetail() {
     // Step 3: QA Review & Verification
     const reviewedRecord = records.find(r => r.status === 'PENDING_APPROVAL' || r.status === 'APPROVED');
     const isReviewed = !!reviewedRecord || master.status === 'PENDING_APPROVAL' || master.status === 'APPROVED' || !!master.reviewedAt;
-    const reviewerName = master.reviewedByName || getUserName(master.reviewedBy || reviewedRecord?.reviewedBy || '');
+    const reviewerName = getUserName(master.reviewedBy || reviewedRecord?.reviewedBy || master.reviewedByName || '');
     steps.push({
       key: 'reviewed',
       title: 'QA Review Completed & Forwarded for Approval',
       completed: isReviewed,
       timestamp: master.reviewedAt || reviewedRecord?.reviewedAt || (isReviewed ? master.updatedAt : null),
-      performedBy: isReviewed ? (reviewerName || 'QA Reviewer') : 'QA Reviewer',
+      performedBy: isReviewed ? reviewerName : '',
       reason: isReviewed ? (master.reviewComments || reviewedRecord?.reviewComments || 'Reviewed specifications and verified formula parameters') : 'Pending QA review'
     });
 
     // Step 4: QA Approval & Active
     const approvedRecord = records.find(r => r.status === 'APPROVED');
     const isApproved = !!approvedRecord || master.status === 'APPROVED';
-    const approverName = master.approvedByName || getUserName(master.approvedBy || approvedRecord?.approvedBy || '');
+    const approverName = getUserName(master.approvedBy || approvedRecord?.approvedBy || master.approvedByName || '');
     steps.push({
       key: 'approved',
       title: 'Batch Sheet Master Approved & Active',
       completed: isApproved,
       timestamp: master.approvedAt || approvedRecord?.approvedAt || (isApproved ? master.updatedAt : null),
-      performedBy: isApproved ? (approverName || 'QA Approver') : 'QA Approver',
+      performedBy: isApproved ? approverName : '',
       reason: isApproved ? (master.approvalComments || approvedRecord?.approvalComments || 'Approved master for production execution') : 'Pending QA approval'
     });
 

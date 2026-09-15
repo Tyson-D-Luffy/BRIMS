@@ -48,6 +48,15 @@ Access control in BRIMS is controlled via both **Base Roles** and **Granular Sys
 - `create:product`, `edit:product`, `product:submit` (Submit for GAMP Review button — assigned strictly to QA Chemist), `product:review`, `product:approve`, `product:reject`, `product:return`, `product:deactivate`
 - `batch_sheet_master:create`, `batch_sheet_master:edit`, `batch_sheet_master:submit`, `batch_sheet_master:review`, `batch_sheet_master:approve`, `batch_sheet_master:reject`, `batch_sheet_master:return`, `batch_sheet_master:deactivate`
 
+#### D. Batch Number Engine & Format Builder Rights
+- `format:create` - Create new Batch Number Format Layout template
+- `format:edit` - Edit Format Layout (Assigned to QA Chemist, QA Incharge, and Admin; enables editing existing active/draft format sequences under 21 CFR Part 11 electronic signature and GMP audit trail logging)
+- `format:submit` - Submit Format Layout for QA review
+- `format:approve` - Approve & Activate Format Layout
+- `batch_number:create` - Generate/draft new Batch Number Record
+- `batch_number:submit` - Submit generated Batch Number for approval
+- `batch_number:approve` - Authorize Batch Number allocation
+
 ---
 
 ## 3. Core Modules & Functionality
@@ -97,7 +106,7 @@ Access control in BRIMS is controlled via both **Base Roles** and **Granular Sys
 2. **Editing**: User with `lookup:edit` or `lookup:create` can edit non-ACTIVE or DRAFT lookup records. Saving triggers E-Signature verification and resets the record to `DRAFT` for re-approval.
 3. **Submission**: User with `lookup:submit` submits DRAFT record for approval (`PENDING_APPROVAL`).
 4. **Approval / Activation**: User with `lookup:approve` or `lookup:activate` signs to activate the lookup record (`ACTIVE`).
-5. **Deactivation**: User with `lookup:deactivate` can deactivate active lookups (`INACTIVE`).
+5. **Deactivation**: User with `lookup:deactivate` can deactivate active lookups, which resets the record to `DRAFT` status with a Submit button visible, allowing the QA Chemist to edit the value before submitting for the next stage of re-authorization.
 
 ### B. Batch Issuance & Execution 8-Step Lifecycle
 ```

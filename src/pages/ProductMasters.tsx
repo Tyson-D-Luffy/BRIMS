@@ -76,6 +76,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { LoadingPage } from '../components/LoadingSpinner';
 import { SignatureDialog } from '../components/SignatureDialog';
 import { validateBatchNumber } from '../lib/batchValidation';
+import { getUserEmployeeIdAndFullNameWithDesignation } from '../lib/batch-sheets';
 
 const productSchema = z.object({
   title: z.string().min(2, 'Title must be at least 2 characters'),
@@ -96,6 +97,7 @@ export default function ProductMasters() {
   const navigate = useNavigate();
   const [products, setProducts] = useState<ProductMaster[]>([]);
   const [activeProcesses, setActiveProcesses] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -174,9 +176,23 @@ export default function ProductMasters() {
     }
   };
 
+  const fetchUsers = async () => {
+    try {
+      const response = await api.get('/users');
+      if (response.data?.success && response.data?.data) {
+        setUsers(response.data.data);
+      } else if (Array.isArray(response.data)) {
+        setUsers(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch users in ProductMasters', error);
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
     fetchActiveProcesses();
+    fetchUsers();
   }, []);
 
   // Filter products locally on active tab and search query to provide ultra-fast dynamic interaction
@@ -678,7 +694,6 @@ export default function ProductMasters() {
                 <tbody className="divide-y divide-slate-100 text-sm">
                   <AnimatePresence mode="popLayout">
                     {sortedAndFilteredProducts.map((product) => {
-                      const creatorName = product.createdByEmail || "Creator";
                       const currentWStatus = product.workflowStatus || "Active";
                       return (
                         <motion.tr 
@@ -704,7 +719,7 @@ export default function ProductMasters() {
                             {new Date(product.activeSince || product.effectiveDate || product.approvedDate || product.updatedAt || product.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                           </td>
                           <td className="py-4 px-4 text-xs text-slate-600">
-                            <HighlightText text={creatorName.split('@')[0]} search={searchQuery} />
+                            <HighlightText text={getUserEmployeeIdAndFullNameWithDesignation(product.createdByEmail || product.createdBy, users)} search={searchQuery} />
                           </td>
                           <td className="py-4 px-4 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
@@ -807,7 +822,7 @@ export default function ProductMasters() {
                         <p className="text-xs font-mono text-slate-400 mb-3 flex items-center gap-1">
                           <span>Ver: {product.version || 1}.{product.revisionNo || 0}</span>
                           <span>•</span>
-                          <span>Created by: {creatorName.split('@')[0]}</span>
+                          <span>Created by: {getUserEmployeeIdAndFullNameWithDesignation(product.createdByEmail || product.createdBy, users)}</span>
                         </p>
 
                         {/* Active Since / Deactivated Since Dates block */}
@@ -961,13 +976,17 @@ export default function ProductMasters() {
                 <div className="grid grid-cols-2 gap-4 text-xs bg-indigo-50/30 p-4 rounded-2xl border border-indigo-50/50">
                   <div className="space-y-1 text-left">
                     <span className="text-slate-400 block">Creator Context:</span>
-                    <span className="font-semibold text-indigo-900 block">{viewingProduct.createdByEmail || "system@internal"}</span>
+                    <span className="font-semibold text-indigo-900 block">
+                      {getUserEmployeeIdAndFullNameWithDesignation(viewingProduct.createdByEmail || viewingProduct.createdBy, users)}
+                    </span>
                     <span className="text-[10px] text-slate-400 block">{viewingProduct.createdAt ? new Date(viewingProduct.createdAt).toLocaleString() : 'N/A'}</span>
                   </div>
                   {viewingProduct.approvedByEmail && (
                     <div className="space-y-1 border-l border-indigo-100 pl-4 text-left">
                       <span className="text-slate-400 block">QA Approver context:</span>
-                      <span className="font-semibold text-emerald-950 block">{viewingProduct.approvedByEmail}</span>
+                      <span className="font-semibold text-emerald-950 block">
+                        {getUserEmployeeIdAndFullNameWithDesignation(viewingProduct.approvedByEmail || viewingProduct.approvedBy, users)}
+                      </span>
                       <span className="text-[10px] text-slate-400 block">{viewingProduct.approvedDate ? new Date(viewingProduct.approvedDate).toLocaleString() : 'N/A'}</span>
                     </div>
                   )}
@@ -992,7 +1011,7 @@ export default function ProductMasters() {
                               <p className="text-sm font-bold text-slate-800">{step.action}</p>
                               <span className="text-[10px] text-slate-400">{step.timestamp ? new Date(step.timestamp).toLocaleString() : ''}</span>
                             </div>
-                            <p className="text-xs text-slate-500">Performed by: <span className="font-medium text-slate-700">{step.performedBy}</span></p>
+                            <p className="text-xs text-slate-500">Performed by: <span className="font-medium text-slate-700">{getUserEmployeeIdAndFullNameWithDesignation(step.performedBy || step.performedByUid, users)}</span></p>
                             {step.reason && (
                               <p className="text-xs text-slate-600 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-150 inline-block font-sans mt-1">
                                 {step.reason}

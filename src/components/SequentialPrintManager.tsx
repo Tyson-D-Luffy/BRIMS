@@ -47,7 +47,7 @@ import api from '../services/api';
 import { BatchIssuance, BatchSheetItem, PrintJobStatus, ProductMaster, getUserBaseRole, BatchSheetPrintHistoryEntry, PrintJob } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { formatRequestId, generateRequestPreviewPDF } from '../lib/pdf-generator';
-import { initializeBatchSheetsClient, evaluateSheetEligibility, getBatchIssuedByString, getUserFullNameWithDesignation, getSheetPrintedByString } from '../lib/batch-sheets';
+import { initializeBatchSheetsClient, evaluateSheetEligibility, getBatchIssuedByString, getUserFullNameWithDesignation, getSheetPrintedByString, setGlobalUsersCache } from '../lib/batch-sheets';
 import { parseAndValidatePageSelection, extractSelectedPagesPDF, getPDFPageCount } from '../lib/page-parser';
 import { SecurePDFViewer } from './SecurePDFViewer';
 import { cn } from '../lib/utils';
@@ -79,6 +79,23 @@ export function SequentialPrintManager({
   users
 }: SequentialPrintManagerProps) {
   const { user } = useAuth();
+  const [internalUsers, setInternalUsers] = useState<any[]>(users || []);
+
+  useEffect(() => {
+    if (users && users.length > 0) {
+      setInternalUsers(users);
+      setGlobalUsersCache(users);
+    } else {
+      api.get('/users').then(res => {
+        const list = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
+        if (list.length > 0) {
+          setInternalUsers(list);
+          setGlobalUsersCache(list);
+        }
+      }).catch(() => {});
+    }
+  }, [users]);
+
   const sheets: BatchSheetItem[] = initializeBatchSheetsClient(batch);
 
   // Active print & confirmation modal states
@@ -114,6 +131,7 @@ export function SequentialPrintManager({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewSheetNumber, setPreviewSheetNumber] = useState<string>('');
+  const [previewSheetItem, setPreviewSheetItem] = useState<BatchSheetItem | null>(null);
   const [generatingPreview, setGeneratingPreview] = useState(false);
 
   // Auto-detect if any sheet is in 'AWAITING_USER_CONFIRMATION' or 'PRINTING_ISSUE' on mount or batch update
@@ -198,6 +216,7 @@ export function SequentialPrintManager({
   const handlePreviewIndividualSheet = async (sheet: BatchSheetItem) => {
     setGeneratingPreview(true);
     setPreviewSheetNumber(sheet.batchNumber);
+    setPreviewSheetItem(sheet);
     try {
       const generated = await handleGenerateSheetPDF(sheet, false);
       if (generated?.url) {
@@ -542,7 +561,7 @@ export function SequentialPrintManager({
               <div className="text-xs">
                 <span className="font-bold block text-amber-950">Active Print Lock Engaged</span>
                 <span>
-                  Batch Sheet #{activeLockedSheet.sequenceIndex + 1} ({activeLockedSheet.batchNumber}) is currently locked by <strong>{activeLockedSheet.activeLock?.lockedByName || 'Operator'}</strong> since {new Date(activeLockedSheet.activeLock?.lockedAt || '').toLocaleTimeString()}.
+                  Batch Sheet #{activeLockedSheet.sequenceIndex + 1} ({activeLockedSheet.batchNumber}) is currently locked by <strong>{activeLockedSheet.activeLock?.lockedByName ? getUserFullNameWithDesignation(activeLockedSheet.activeLock.lockedByName, internalUsers) : 'Authorized User'}</strong> since {new Date(activeLockedSheet.activeLock?.lockedAt || '').toLocaleTimeString()}.
                 </span>
               </div>
             </div>
@@ -659,7 +678,7 @@ export function SequentialPrintManager({
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-slate-500 font-medium">
                         {isPrinted && (
                           <span>
-                            Printed by <strong>{sheet.printedByName || 'Operator'}</strong> on {new Date(sheet.printedAt || sheet.completedAt || '').toLocaleString()}
+                            Printed by <strong>{getUserFullNameWithDesignation(sheet.printedByName || sheet.printedBy, internalUsers)}</strong> on {new Date(sheet.printedAt || sheet.completedAt || '').toLocaleString()}
                           </span>
                         )}
                         {isReprintRequired && sheet.reprintReason && (
@@ -686,8 +705,17 @@ export function SequentialPrintManager({
                       disabled={generatingPreview}
                       className="rounded-xl border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs h-9 px-3"
                     >
-                      <Eye className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
-                      Preview
+                      {generatingPreview && previewSheetNumber === sheet.batchNumber ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin text-indigo-600" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
+                          Preview
+                        </>
+                      )}
                     </Button>
 
                     {/* Audit Button (Independent Print History) */}
@@ -1140,7 +1168,7 @@ export function SequentialPrintManager({
                         <div><span className="text-slate-400 block">Pages:</span> {job.requestedPages || 'ALL'}</div>
                         <div><span className="text-slate-400 block">Delivery:</span> {job.deliveryMethod}</div>
                         <div><span className="text-slate-400 block">Status:</span> {job.status}</div>
-                        <div><span className="text-slate-400 block">Operator:</span> {job.userName || job.userId}</div>
+                        <div><span className="text-slate-400 block">Operator:</span> {getUserFullNameWithDesignation(job.userName || job.userId, internalUsers)}</div>
                       </div>
                     </div>
                   ))}
@@ -1176,7 +1204,7 @@ export function SequentialPrintManager({
                           </div>
                         )}
                         <div className="flex flex-wrap items-center gap-x-3 text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">
-                          <span>Operator: <strong>{entry.performedBy}</strong></span>
+                          <span>Operator: <strong>{getUserFullNameWithDesignation(entry.performedBy, internalUsers)}</strong></span>
                           {entry.employeeId && <span>ID: <strong>{entry.employeeId}</strong></span>}
                           {entry.signatureId && (
                             <span className="text-emerald-700 font-bold flex items-center gap-1">
@@ -1207,47 +1235,34 @@ export function SequentialPrintManager({
       {/* ------------------------------------------------------------- */}
       {/* 6. Individual Sheet View-Only PDF Preview Modal                 */}
       {/* ------------------------------------------------------------- */}
-      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-5xl w-full h-[90vh] p-0 overflow-hidden bg-slate-900 border-none rounded-3xl">
-          <DialogHeader className="p-4 bg-slate-800 text-white flex flex-row items-center justify-between">
-            <div>
-              <DialogTitle className="text-sm font-bold text-white flex items-center gap-2">
-                <FileText className="w-4 h-4 text-indigo-400" />
-                Preview Batch Sheet {previewSheetNumber} (View-Only)
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-400">
-                This preview is for inspection only and does not count as a print job or advance the queue.
-              </DialogDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsPreviewOpen(false)}
-              className="text-slate-400 hover:text-white rounded-full"
-            >
-              <X className="w-5 h-5" />
-            </Button>
-          </DialogHeader>
-
-          <div className="w-full h-[calc(90vh-65px)] bg-slate-950">
-            {previewUrl ? (
-              <SecurePDFViewer
-                fileUrl={previewUrl}
-                onClose={() => setIsPreviewOpen(false)}
-                title={`Preview Batch Sheet ${previewSheetNumber}`}
-                batchNo={previewSheetNumber}
-                hideOverlays={true}
-                hideOverlayPanel={true}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-full text-slate-400 text-sm">
-                <Loader2 className="w-6 h-6 animate-spin mr-2" />
-                Loading PDF Preview...
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {isPreviewOpen && previewUrl && (
+        <SecurePDFViewer
+          fileUrl={previewUrl}
+          onClose={() => {
+            setIsPreviewOpen(false);
+            setPreviewUrl(null);
+          }}
+          title={`Batch Sheet Preview: ${previewSheetNumber}`}
+          batchInfo={`Product: ${productMaster?.title || ''} | Stage: ${productMaster?.stage || ''} | Status: ${batch.status || 'ISSUED'}`}
+          batchNo={previewSheetNumber}
+          dropdownBatchSeries={(batch as any).dropdownBatchSeries}
+          singlePagesBatchNumber={(batch as any).singlePagesBatchNumber}
+          batchStatus={batch.status || 'ISSUED'}
+          issuedBy={getBatchIssuedByString(batch, internalUsers)}
+          dateOfIssue={batch.createdAt || batch.manufacturingDate || new Date().toISOString()}
+          timeOfIssue={batch.createdAt || batch.manufacturingDate || new Date().toISOString()}
+          printedBy={previewSheetItem ? getSheetPrintedByString(previewSheetItem, user, internalUsers) : getUserFullNameWithDesignation(user)}
+          printedDateTime={previewSheetItem?.printedAt || new Date().toISOString()}
+          requestId={formatRequestId(
+            previewSheetNumber,
+            batch.createdAt || batch.manufacturingDate,
+            productMaster?.title || productMaster?.batchNumberSeries,
+            batch.id
+          )}
+          users={internalUsers}
+          mode="batch"
+        />
+      )}
     </Card>
   );
 }

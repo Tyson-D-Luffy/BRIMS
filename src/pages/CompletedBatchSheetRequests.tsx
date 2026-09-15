@@ -33,6 +33,7 @@ import api from '../services/api';
 import { BatchIssuance, ProductMaster } from '../types';
 import { toast } from 'sonner';
 import { LoadingPage } from '../components/LoadingSpinner';
+import { getUserFullNameWithDesignation } from '../lib/batch-sheets';
 import { HighlightText } from '../components/HighlightText';
 
 export default function CompletedBatchSheetRequests() {
@@ -104,27 +105,6 @@ export default function CompletedBatchSheetRequests() {
     }
   };
 
-  const resolveUser = (userIdOrEmail: string | undefined, fallbackName: string = 'N/A') => {
-    if (!userIdOrEmail) return { employeeId: 'N/A', username: fallbackName };
-    const found = users.find(u => 
-      u.uid === userIdOrEmail || 
-      u.id === userIdOrEmail || 
-      u.email === userIdOrEmail || 
-      u.username === userIdOrEmail ||
-      (typeof userIdOrEmail === 'string' && u.email?.toLowerCase() === userIdOrEmail.toLowerCase())
-    );
-    if (found) {
-      return {
-        employeeId: found.employeeId || 'N/A',
-        username: found.username || found.displayName || found.email?.split('@')[0] || 'Unknown'
-      };
-    }
-    return {
-      employeeId: 'N/A',
-      username: userIdOrEmail.includes('@') ? userIdOrEmail.split('@')[0] : userIdOrEmail
-    };
-  };
-
   const filteredRequests = completedRequests.filter(req => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
@@ -152,34 +132,32 @@ export default function CompletedBatchSheetRequests() {
     // Resolve Step 1
     const t1 = timeline.find((t: any) => t.action === 'CREATE' || t.action === 'ISSUE_BATCH' || t.newStatus === 'DRAFT' || t.newStatus === 'PENDING_REVIEW') || timeline[0];
     const d1 = t1 ? new Date(t1.timestamp).toLocaleString() : (selectedBatch.createdAt ? new Date(selectedBatch.createdAt).toLocaleString() : 'N/A');
-    const u1 = t1 
-      ? resolveUser(t1.userEmail || t1.userId, selectedBatch.issuedByName) 
-      : resolveUser(selectedBatch.issuedBy || selectedBatch.issuedByName, selectedBatch.issuedByName || 'Akshay Sharma');
+    const u1 = getUserFullNameWithDesignation(t1?.userId || t1?.userEmail || selectedBatch.issuedBy || selectedBatch.issuedByName, users);
 
     // Resolve Step 2 & 3
     const t2 = timeline.find((t: any) => t.action === 'APPROVE' || t.action === 'APPROVE_BATCH' || t.newStatus === 'APPROVED');
     const d2 = t2 ? new Date(t2.timestamp).toLocaleString() : new Date(selectedBatch.updatedAt || selectedBatch.createdAt).toLocaleString();
-    const u2 = t2 ? resolveUser(t2.userEmail || t2.userId, 'QA Reviewer') : resolveUser(selectedBatch.updatedBy, 'QA Reviewer');
+    const u2 = getUserFullNameWithDesignation(t2?.userId || t2?.userEmail || selectedBatch.updatedBy, users);
 
     // Resolve Step 4
     const t4 = timeline.find((t: any) => t.newStatus === 'ISSUED' || t.action === 'ISSUE' || t.action === 'ISSUE_BATCH');
     const d4 = t4 ? new Date(t4.timestamp).toLocaleString() : new Date(selectedBatch.createdAt).toLocaleString();
-    const u4 = t4 ? resolveUser(t4.userEmail || t4.userId, selectedBatch.issuedByName) : resolveUser(selectedBatch.issuedBy || selectedBatch.issuedByName, selectedBatch.issuedByName || 'Akshay Sharma');
+    const u4 = getUserFullNameWithDesignation(t4?.userId || t4?.userEmail || selectedBatch.issuedBy || selectedBatch.issuedByName, users);
 
     // Resolve Step 5
     const t5 = timeline.find((t: any) => t.newStatus === 'READY_FOR_PRODUCTION_HANDOVER' || t.action === 'PRINT_BATCH_SHEET');
     const d5 = t5 ? new Date(t5.timestamp).toLocaleString() : new Date(selectedBatch.createdAt).toLocaleString();
-    const u5 = t5 ? resolveUser(t5.userEmail || t5.userId, 'Authorized Operator') : resolveUser(selectedBatch.updatedBy, 'Authorized Operator');
+    const u5 = getUserFullNameWithDesignation(t5?.userId || t5?.userEmail || selectedBatch.updatedBy, users);
 
     // Resolve Step 6
     const t6 = timeline.find((t: any) => t.newStatus === 'READY_FOR_QA_REVIEW');
     const d6 = t6 ? new Date(t6.timestamp).toLocaleString() : new Date(selectedBatch.updatedAt || selectedBatch.createdAt).toLocaleString();
-    const u6 = t6 ? resolveUser(t6.userEmail || t6.userId, 'QA Officer') : resolveUser(selectedBatch.updatedBy, 'QA Officer');
+    const u6 = getUserFullNameWithDesignation(t6?.userId || t6?.userEmail || selectedBatch.updatedBy, users);
 
     // Resolve Step 7
     const t7 = timeline.find((t: any) => t.newStatus === 'COMPLETED' || t.action === 'COMPLETE');
     const d7 = t7 ? new Date(t7.timestamp).toLocaleString() : (selectedBatch.completedAt ? new Date(selectedBatch.completedAt).toLocaleString() : new Date(selectedBatch.updatedAt).toLocaleString());
-    const u7 = t7 ? resolveUser(t7.userEmail || t7.userId, 'QA Reviewer') : resolveUser(selectedBatch.completedBy || selectedBatch.updatedBy, 'QA Reviewer');
+    const u7 = getUserFullNameWithDesignation(selectedBatch.completedByName || selectedBatch.completedBy || t7?.userId || t7?.userEmail || selectedBatch.updatedBy, users);
 
     const steps = [
       {
@@ -188,7 +166,7 @@ export default function CompletedBatchSheetRequests() {
         badgeClass: "bg-emerald-100 text-emerald-800",
         description: "Product & process template configured.",
         date: d1,
-        user: `${u1.employeeId !== 'N/A' ? u1.employeeId + ' - ' : ''}${u1.username}`,
+        user: u1,
         icon: FileText,
         iconClass: "bg-emerald-50 border-emerald-500 text-emerald-600"
       },
@@ -198,7 +176,7 @@ export default function CompletedBatchSheetRequests() {
         badgeClass: "bg-emerald-100 text-emerald-800",
         description: "Verify documentation & GMP compliance.",
         date: d2,
-        user: `${u2.employeeId !== 'N/A' ? u2.employeeId + ' - ' : ''}${u2.username}`,
+        user: u2,
         icon: Clock,
         iconClass: "bg-emerald-50 border-emerald-500 text-emerald-600"
       },
@@ -208,7 +186,7 @@ export default function CompletedBatchSheetRequests() {
         badgeClass: "bg-emerald-100 text-emerald-800",
         description: "Part 11 password digital e-signatures.",
         date: d2,
-        user: `${u2.employeeId !== 'N/A' ? u2.employeeId + ' - ' : ''}${u2.username}`,
+        user: u2,
         icon: UserCheck,
         iconClass: "bg-emerald-50 border-emerald-500 text-emerald-600"
       },
@@ -218,7 +196,7 @@ export default function CompletedBatchSheetRequests() {
         badgeClass: "bg-emerald-100 text-emerald-800",
         description: "Unique batch number is locked & issued.",
         date: d4,
-        user: `${u4.employeeId !== 'N/A' ? u4.employeeId + ' - ' : ''}${u4.username}`,
+        user: u4,
         icon: ShieldCheck,
         iconClass: "bg-emerald-50 border-emerald-500 text-emerald-600"
       },
@@ -228,7 +206,7 @@ export default function CompletedBatchSheetRequests() {
         badgeClass: "bg-emerald-100 text-emerald-800 border-none",
         description: "Print PDF and complete operations & hand over filled batch sheet.",
         date: d5,
-        user: `${u5.employeeId !== 'N/A' ? u5.employeeId + ' - ' : ''}${u5.username}`,
+        user: u5,
         icon: Printer,
         iconClass: "bg-emerald-50 border-emerald-500 text-emerald-600 shadow-md shadow-emerald-100"
       },
@@ -238,7 +216,7 @@ export default function CompletedBatchSheetRequests() {
         badgeClass: "bg-emerald-100 text-emerald-800 border-none",
         description: "Verification of filled parameters & entries by QA officer.",
         date: d6,
-        user: `${u6.employeeId !== 'N/A' ? u6.employeeId + ' - ' : ''}${u6.username}`,
+        user: u6,
         icon: ShieldCheck,
         iconClass: "bg-emerald-50 border-emerald-500 text-emerald-600 shadow-md shadow-emerald-100"
       },
@@ -248,7 +226,7 @@ export default function CompletedBatchSheetRequests() {
         badgeClass: "bg-emerald-100 text-emerald-800 border-none",
         description: "Batch records completed, locked, and archived.",
         date: d7,
-        user: `${selectedBatch.completedByEmployeeId ? selectedBatch.completedByEmployeeId + ' - ' : u7.employeeId !== 'N/A' ? u7.employeeId + ' - ' : ''}${selectedBatch.completedByName || u7.username}`,
+        user: u7,
         icon: CheckCircle2,
         iconClass: "bg-emerald-50 border-emerald-500 text-emerald-600 shadow-md shadow-emerald-100"
       }
@@ -385,17 +363,8 @@ export default function CompletedBatchSheetRequests() {
                 const serialNo = iss.batchNumber ? (iss.batchNumber.split('-').pop() || '001') : '001';
                 const batchDetailLabel = `${productName}-${datePart}-${serialNo}`;
 
-                // Completed signature identifier formatting: Employee ID - Username
-                const resolvedUser = resolveUser(iss.completedBy);
-                const employeeId = resolvedUser.employeeId !== 'N/A' ? resolvedUser.employeeId : (iss.completedByEmployeeId || 'N/A');
-                
-                // Prioritize authentic username field over full name / display name
-                const actualUserObj = users.find(u => u.uid === iss.completedBy || u.id === iss.completedBy);
-                const actualUsername = actualUserObj?.username || resolvedUser.username;
-
-                const completedByStr = employeeId !== 'N/A'
-                  ? `${employeeId} - ${actualUsername}`
-                  : actualUsername;
+                // Completed signature identifier formatting: Full Name (Designation)
+                const completedByStr = getUserFullNameWithDesignation(iss.completedByName || iss.completedBy, users);
 
                 const completedOnStr = iss.completedAt 
                   ? new Date(iss.completedAt).toLocaleString() 

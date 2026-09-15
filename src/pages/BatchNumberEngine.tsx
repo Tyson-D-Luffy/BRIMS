@@ -48,6 +48,7 @@ import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { SignatureDialog } from '../components/SignatureDialog';
 import { HighlightText } from '../components/HighlightText';
+import { getUserFullNameWithDesignation, setGlobalUsersCache, getGlobalUsersCache } from '../lib/batch-sheets';
 
 import { 
   BatchNumberFormat, 
@@ -124,6 +125,22 @@ export default function BatchNumberEngine() {
   // Generated Records state
   const [records, setRecords] = useState<BatchNumberRecord[]>([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
+  const [users, setUsers] = useState<any[]>(() => getGlobalUsersCache());
+
+  const fetchUsers = async () => {
+    try {
+      const res = await api.get('/users');
+      const userList = Array.isArray(res.data) 
+        ? res.data 
+        : (Array.isArray(res.data?.data) ? res.data.data : []);
+      if (userList.length > 0) {
+        setUsers(userList);
+        setGlobalUsersCache(userList);
+      }
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    }
+  };
 
   // Shared Master addition state
   const [showAddMasterModal, setShowAddMasterModal] = useState(false);
@@ -237,6 +254,7 @@ export default function BatchNumberEngine() {
         // Fetch product masters, masters, formats, and records in robust parallel tracks.
         // Even if some elements take longer, they will load as fast as possible.
         await Promise.all([
+          fetchUsers(),
           fetchProductMasters(),
           fetchMasters(),
           (async () => {
@@ -287,7 +305,7 @@ export default function BatchNumberEngine() {
     }
 
     try {
-      const userDisplayName = user?.displayName || user?.email || 'User';
+      const userDisplayName = getUserFullNameWithDesignation(user, users);
       const item: any = {
         type: newMasterType,
         code: formattedCode,
@@ -498,6 +516,7 @@ export default function BatchNumberEngine() {
             setSigConfig={setSigConfig}
             setShowSignature={setShowSignature}
             initialStatusFilter={formatsInitialFilter}
+            users={users}
           />
         </motion.div>
 
@@ -520,6 +539,7 @@ export default function BatchNumberEngine() {
             setShowSignature={setShowSignature}
             initialRecord={creatorInitialRecord}
             initialStep={creatorInitialStep}
+            users={users}
           />
         </motion.div>
 
@@ -563,6 +583,7 @@ export default function BatchNumberEngine() {
             user={user}
             allProducts={allProducts}
             logAudit={logAudit}
+            users={users}
           />
         </motion.div>
       </div>
@@ -703,7 +724,7 @@ export default function BatchNumberEngine() {
                         selectedViewRecord.timeline.map((item, idx) => (
                           <TimelineNode 
                             key={idx}
-                            title={`${item.type.charAt(0).toUpperCase() + item.type.slice(1)} by ${item.user}`}
+                            title={`${item.type.charAt(0).toUpperCase() + item.type.slice(1)} by ${getUserFullNameWithDesignation(item.user, users)}`}
                             time={new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             date={new Date(item.timestamp).toLocaleDateString()}
                             comments={item.comments || ''}
@@ -713,14 +734,14 @@ export default function BatchNumberEngine() {
                       ) : (
                         <>
                           <TimelineNode 
-                            title="Submitted by QA Admin" 
+                            title={`Submitted by ${getUserFullNameWithDesignation(selectedViewRecord.generatedBy || user, users)}`} 
                             time={new Date(selectedViewRecord.generatedOn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
                             date={new Date(selectedViewRecord.generatedOn).toLocaleDateString()} 
                             comments="Submitted for approval" 
                             active={true}
                           />
                           <TimelineNode 
-                            title="Approved by QA Head" 
+                            title={selectedViewRecord.approvedBy ? `Approved by ${getUserFullNameWithDesignation(selectedViewRecord.approvedBy, users)}` : "Awaiting QA Approval"} 
                             time={selectedViewRecord.approvedDate ? new Date(selectedViewRecord.approvedDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Pending"} 
                             date={selectedViewRecord.approvedDate ? new Date(selectedViewRecord.approvedDate).toLocaleDateString() : ""} 
                             comments={selectedViewRecord.approvedDate ? "Batch number approved" : "Awaiting electronic sign-off"} 
@@ -788,7 +809,7 @@ export default function BatchNumberEngine() {
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">Approved By</span>
-                        <span className="font-extrabold text-slate-800">{selectedViewRecord.approvedBy || 'Pending'}</span>
+                        <span className="font-extrabold text-slate-800">{selectedViewRecord.approvedBy ? getUserFullNameWithDesignation(selectedViewRecord.approvedBy, users) : 'Pending'}</span>
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">Approved On</span>
@@ -1520,6 +1541,7 @@ interface FormatsScreenProps {
   setSigConfig: any;
   setShowSignature: any;
   initialStatusFilter?: 'ALL' | 'UNDER_REVIEW';
+  users?: any[];
 }
 
 function FormatsScreen({
@@ -1533,11 +1555,31 @@ function FormatsScreen({
   logAudit,
   setSigConfig,
   setShowSignature,
-  initialStatusFilter
+  initialStatusFilter,
+  users = []
 }: FormatsScreenProps) {
   const checkPermission = (permId: string, customMessage?: string) => {
     if (user?.role === 'Admin' || user?.role === 'ADMIN' || user?.email?.toLowerCase() === 'shakshay04@gmail.com') {
       return true;
+    }
+    const userRole = (user?.role || '').toUpperCase();
+    const designation = (user?.designation || '').toUpperCase();
+    // Grant Edit Format Layout authority to QA Chemist and QA Incharge
+    if (permId === 'format:edit' || permId === 'format:create') {
+      if (
+        userRole.includes('QA_CHEMIST') ||
+        userRole.includes('QA_INCHARGE') ||
+        userRole.includes('QA_SUPERVISOR') ||
+        userRole.includes('QA_LEAD') ||
+        userRole.includes('QA_MANAGER') ||
+        designation.includes('QA CHEMIST') ||
+        designation.includes('QA INCHARGE') ||
+        designation.includes('QA IN-CHARGE') ||
+        designation.includes('QUALITY ASSURANCE') ||
+        userRole.includes('QA')
+      ) {
+        return true;
+      }
     }
     const userPermissions = user?.permissions || [];
     if (!userPermissions.includes(permId)) {
@@ -1547,7 +1589,32 @@ function FormatsScreen({
     return true;
   };
 
+  const hasEditPermission = () => {
+    if (user?.role === 'Admin' || user?.role === 'ADMIN' || user?.email?.toLowerCase() === 'shakshay04@gmail.com') {
+      return true;
+    }
+    const userRole = (user?.role || '').toUpperCase();
+    const designation = (user?.designation || '').toUpperCase();
+    if (
+      userRole.includes('QA_CHEMIST') ||
+      userRole.includes('QA_INCHARGE') ||
+      userRole.includes('QA_SUPERVISOR') ||
+      userRole.includes('QA_LEAD') ||
+      userRole.includes('QA_MANAGER') ||
+      designation.includes('QA CHEMIST') ||
+      designation.includes('QA INCHARGE') ||
+      designation.includes('QA IN-CHARGE') ||
+      designation.includes('QUALITY ASSURANCE') ||
+      userRole.includes('QA')
+    ) {
+      return true;
+    }
+    const userPermissions = user?.permissions || [];
+    return userPermissions.includes('format:edit') || userPermissions.includes('format:create');
+  };
+
   const [isCreating, setIsCreating] = useState(false);
+  const [editingFormat, setEditingFormat] = useState<BatchNumberFormat | null>(null);
   const [selectedFormatWorkflow, setSelectedFormatWorkflow] = useState<BatchNumberFormat | null>(null);
   const [formatCode, setFormatCode] = useState('');
   const [formatName, setFormatName] = useState('');
@@ -1564,6 +1631,7 @@ function FormatsScreen({
 
   // Draft Format edit trigger
   const triggerCreateNew = () => {
+    setEditingFormat(null);
     setFormatCode('');
     setFormatName('');
     setFormatTokens([
@@ -1573,10 +1641,98 @@ function FormatsScreen({
   };
 
   const handleEditFormat = (f: BatchNumberFormat) => {
+    if (!hasEditPermission()) {
+      toast.error("Access Denied: You do not have 'Edit Format Layout' permission. Only QA Chemist, QA Incharge, and Authorized QA/Admin roles can edit format layouts.");
+      return;
+    }
+    setEditingFormat(f);
     setFormatCode(f.formatCode);
     setFormatName(f.formatName);
     setFormatTokens(getFormatTokens(f));
     setIsCreating(true);
+  };
+
+  const handleSaveEditedFormat = async () => {
+    if (!editingFormat) return;
+    if (!hasEditPermission()) {
+      toast.error("Access Denied: You do not have 'Edit Format Layout' permission.");
+      return;
+    }
+    if (!formatCode.trim() || !formatName.trim()) {
+      toast.error('Format Code and Format Name are required');
+      return;
+    }
+    if (formatTokens.length === 0) {
+      toast.error('At least one token is required in the format sequence layout');
+      return;
+    }
+
+    const userDisplayName = getUserFullNameWithDesignation(user, users);
+    const meaning = `I certify under 21 CFR Part 11 and GMP guidelines that I have reviewed and authorized the layout modifications for format "${formatCode.trim()}".`;
+
+    setSigConfig({
+      title: `E-Signature Required: Edit Format Layout (${formatCode.trim()})`,
+      description: `You are modifying batch number format layout "${formatCode.trim()}". This action will be recorded with your electronic signature in the Batch Process Audit Logs.`,
+      meaning,
+      onVerify: async (password: string) => {
+        try {
+          const updatedTokens = formatTokens;
+          const updatedHistory = [
+            ...(editingFormat.history || editingFormat.approvalHistory || []),
+            {
+              status: editingFormat.status,
+              action: 'EDIT_FORMAT_LAYOUT',
+              user: userDisplayName,
+              timestamp: new Date().toISOString(),
+              comments: `Authorized modification of format layout "${formatCode.trim()}" sequence.`,
+              meaning: meaning
+            }
+          ];
+
+          const payload = {
+            id: editingFormat.id,
+            formatCode: formatCode.trim(),
+            formatName: formatName.trim(),
+            tokens: updatedTokens,
+            status: editingFormat.status,
+            branch: selectedBranch || editingFormat.branch || 'Masulkhana',
+            updatedBy: userDisplayName,
+            updatedAt: new Date().toISOString(),
+            isEditing: true,
+            action: 'EDIT_FORMAT_LAYOUT',
+            changeReason: `Authorized modification of format layout "${formatCode.trim()}" sequence by QA Chemist/QA Incharge`,
+            password,
+            signatureMeaning: meaning,
+            history: updatedHistory,
+            approvalHistory: updatedHistory
+          };
+
+          await api.post('/batch-number-engine/formats', payload);
+
+          if (logAudit) {
+            await logAudit(
+              'EDIT_FORMAT_LAYOUT',
+              formatCode.trim(),
+              'Batch Number Generation Engine',
+              editingFormat,
+              payload,
+              `Authorized edit of format layout "${formatCode.trim()}" layout sequence under GMP compliance`
+            );
+          }
+
+          toast.success(`Format layout "${formatCode.trim()}" updated successfully and logged in Batch Process Audit Trail.`);
+          setIsCreating(false);
+          setEditingFormat(null);
+          setShowSignature(false);
+          onRefresh();
+        } catch (err: any) {
+          console.error('Failed to update format layout:', err);
+          const msg = err?.response?.data?.message || 'E-Signature verification failed or API error';
+          toast.error(msg);
+        }
+      }
+    });
+    setShowSignature(true);
   };
 
   // Add token from Library
@@ -1916,7 +2072,7 @@ function FormatsScreen({
                             {f.status}
                           </span>
                         </td>
-                        <td className="p-4 px-6 text-right space-x-2">
+                        <td className="p-4 px-6 text-right space-x-2 whitespace-nowrap">
                           <Button 
                             size="icon" 
                             variant="ghost" 
@@ -1929,6 +2085,19 @@ function FormatsScreen({
                           >
                             <Eye className="w-4.5 h-4.5" />
                           </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="h-8 px-3 rounded-full border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-900 font-semibold inline-flex items-center gap-1.5 transition-colors shadow-xs"
+                            title="Edit Format Layout"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditFormat(f);
+                            }}
+                          >
+                            <Edit2 className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Edit</span>
+                          </Button>
                           {f.status === 'UNDER_REVIEW' && (
                             <Button 
                               size="sm" 
@@ -1939,19 +2108,6 @@ function FormatsScreen({
                               }}
                             >
                               Approve & Activate
-                            </Button>
-                          )}
-                          {f.status === 'DRAFT' && (
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              className="rounded-full px-4 border-slate-200 hover:bg-slate-50 text-slate-600 font-semibold" 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEditFormat(f);
-                              }}
-                            >
-                              Edit Layout
                             </Button>
                           )}
                           {user?.email?.toLowerCase() === 'shakshay04@gmail.com' && (
@@ -1985,16 +2141,37 @@ function FormatsScreen({
             <Card className="border-none bg-white shadow-xl shadow-slate-100/40 rounded-3xl p-6 space-y-6">
               
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <Button variant="ghost" className="rounded-full pl-2" onClick={() => setIsCreating(false)}>
-                  ← Back to Formats
-                </Button>
-                <div className="space-x-2">
-                  <Button variant="ghost" className="rounded-full text-slate-500" onClick={handleSaveDraft}>
-                    Save Draft
+                <div className="flex items-center gap-3">
+                  <Button variant="ghost" className="rounded-full pl-2" onClick={() => { setIsCreating(false); setEditingFormat(null); }}>
+                    ← Back to Formats
                   </Button>
-                  <Button className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-6 shadow-md shadow-indigo-200" onClick={handleSubmitForReview}>
-                    Submit for Review
-                  </Button>
+                  {editingFormat && (
+                    <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1 font-semibold rounded-full">
+                      Editing Layout: {editingFormat.formatCode} ({editingFormat.status})
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {editingFormat ? (
+                    <>
+                      <Button variant="outline" className="rounded-full text-slate-600 border-slate-200" onClick={() => { setIsCreating(false); setEditingFormat(null); }}>
+                        Cancel
+                      </Button>
+                      <Button className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-6 shadow-md shadow-indigo-200 font-bold inline-flex items-center gap-2" onClick={handleSaveEditedFormat}>
+                        <Edit2 className="w-4 h-4" />
+                        <span>Save & E-Sign Layout</span>
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="ghost" className="rounded-full text-slate-500" onClick={handleSaveDraft}>
+                        Save Draft
+                      </Button>
+                      <Button className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-full px-6 shadow-md shadow-indigo-200" onClick={handleSubmitForReview}>
+                        Submit for Review
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -2306,16 +2483,14 @@ function FormatsScreen({
                     : [
                         {
                           status: 'DRAFT',
-                          user: selectedFormatWorkflow.createdBy || 'QA Admin',
-                          role: 'PRODUCTION_INCHARGE',
+                          user: selectedFormatWorkflow.createdBy || (user?.username || 'Current User'),
                           timestamp: selectedFormatWorkflow.createdAt || new Date().toISOString(),
                           comments: 'Initial layout design and token configuration.'
                         },
                         ...(selectedFormatWorkflow.status === 'UNDER_REVIEW' || selectedFormatWorkflow.status === 'ACTIVE'
                           ? [{
                               status: 'UNDER_REVIEW',
-                              user: selectedFormatWorkflow.createdBy || 'QA Admin',
-                              role: 'PRODUCTION_INCHARGE',
+                              user: selectedFormatWorkflow.createdBy || (user?.username || 'Current User'),
                               timestamp: selectedFormatWorkflow.updatedAt || selectedFormatWorkflow.createdAt || new Date().toISOString(),
                               comments: 'Submitted layout format for QA authorization.',
                               meaning: 'I certify that this layout is compliant with local and CFR 11 expectations'
@@ -2324,8 +2499,7 @@ function FormatsScreen({
                         ...(selectedFormatWorkflow.status === 'ACTIVE'
                           ? [{
                               status: 'ACTIVE',
-                              user: selectedFormatWorkflow.updatedBy || 'QA Head',
-                              role: 'ADMIN',
+                              user: selectedFormatWorkflow.updatedBy || selectedFormatWorkflow.approvedBy || (user?.username || 'Current User'),
                               timestamp: selectedFormatWorkflow.updatedAt || selectedFormatWorkflow.createdAt || new Date().toISOString(),
                               comments: 'Approved layout configuration. Sequence rule live.',
                               meaning: 'This electronic signature confirms authorization and makes this sequence rule live'
@@ -2346,7 +2520,7 @@ function FormatsScreen({
                               }`}>
                                 {h.status}
                               </Badge>
-                              <p className="text-xs font-bold text-slate-950 mt-1">{h.user} ({h.role})</p>
+                              <p className="text-xs font-bold text-slate-950 mt-1">{getUserFullNameWithDesignation(h.user, users)}</p>
                             </div>
                             <span className="text-[10px] text-slate-400 font-medium font-mono">{new Date(h.timestamp).toLocaleString()}</span>
                           </div>
@@ -2405,6 +2579,7 @@ interface CreatorScreenProps {
   setShowSignature: any;
   initialRecord?: BatchNumberRecord | null;
   initialStep?: number;
+  users?: any[];
 }
 
 function CreatorScreen({
@@ -2419,7 +2594,8 @@ function CreatorScreen({
   setSigConfig,
   setShowSignature,
   initialRecord,
-  initialStep
+  initialStep,
+  users = []
 }: CreatorScreenProps) {
   const checkPermission = (permId: string, customMessage?: string) => {
     if (user?.role === 'Admin' || user?.role === 'ADMIN' || user?.email?.toLowerCase() === 'shakshay04@gmail.com') {
@@ -3249,21 +3425,36 @@ function CreatorScreen({
                   <h3 className="text-base font-extrabold text-slate-900 border-b border-slate-50 pb-3 mb-4">Approval History</h3>
                   
                   <div className="space-y-6 relative pl-4 border-l border-slate-150">
-                    <TimelineNode 
-                      title="Submitted by QA Admin" 
-                      time={new Date(activeCreatedRecord.generatedOn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
-                      date={new Date(activeCreatedRecord.generatedOn).toLocaleDateString()} 
-                      comments="Submitted for approval" 
-                      active={true}
-                    />
+                    {activeCreatedRecord.timeline && activeCreatedRecord.timeline.length > 0 ? (
+                      activeCreatedRecord.timeline.map((item, idx) => (
+                        <TimelineNode 
+                          key={idx}
+                          title={`${item.type.charAt(0).toUpperCase() + item.type.slice(1)} by ${getUserFullNameWithDesignation(item.user, users)}`}
+                          time={new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          date={new Date(item.timestamp).toLocaleDateString()}
+                          comments={item.comments || ''}
+                          active={true}
+                        />
+                      ))
+                    ) : (
+                      <>
+                        <TimelineNode 
+                          title={`Submitted by ${getUserFullNameWithDesignation(activeCreatedRecord.generatedBy || user, users)}`} 
+                          time={new Date(activeCreatedRecord.generatedOn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
+                          date={new Date(activeCreatedRecord.generatedOn).toLocaleDateString()} 
+                          comments="Submitted for approval" 
+                          active={true}
+                        />
 
-                    <TimelineNode 
-                      title="Approved by QA Head" 
-                      time={activeCreatedRecord.approvedDate ? new Date(activeCreatedRecord.approvedDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Pending"} 
-                      date={activeCreatedRecord.approvedDate ? new Date(activeCreatedRecord.approvedDate).toLocaleDateString() : ""} 
-                      comments={activeCreatedRecord.approvedDate ? "Batch number approved" : "Awaiting electronic sign-off"} 
-                      active={activeCreatedRecord.status === 'APPROVED'}
-                    />
+                        <TimelineNode 
+                          title={activeCreatedRecord.approvedBy ? `Approved by ${getUserFullNameWithDesignation(activeCreatedRecord.approvedBy, users)}` : "Awaiting QA Approval"} 
+                          time={activeCreatedRecord.approvedDate ? new Date(activeCreatedRecord.approvedDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Pending"} 
+                          date={activeCreatedRecord.approvedDate ? new Date(activeCreatedRecord.approvedDate).toLocaleDateString() : ""} 
+                          comments={activeCreatedRecord.approvedDate ? "Batch number approved" : "Awaiting electronic sign-off"} 
+                          active={activeCreatedRecord.status === 'APPROVED'}
+                        />
+                      </>
+                    )}
                   </div>
                 </Card>
               </div>
@@ -3317,7 +3508,7 @@ function CreatorScreen({
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">Approved By</span>
-                      <span className="font-extrabold text-slate-800">{activeCreatedRecord.approvedBy || 'Pending'}</span>
+                      <span className="font-extrabold text-slate-800">{activeCreatedRecord.approvedBy ? getUserFullNameWithDesignation(activeCreatedRecord.approvedBy, users) : 'Pending'}</span>
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 font-bold uppercase block mb-0.5">Approved On</span>
@@ -3754,6 +3945,7 @@ interface MastersScreenProps {
   user: any;
   allProducts: any[];
   logAudit?: any;
+  users?: any[];
 }
 
 function MastersScreen({ 
@@ -3766,11 +3958,31 @@ function MastersScreen({
   setShowSignature,
   user,
   allProducts,
-  logAudit
+  logAudit,
+  users = []
 }: MastersScreenProps) {
   const [filterType, setFilterType] = useState<'stage' | 'recovery_component' | 'generic' | 'process' | 'base_batch_number'>('stage');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCycleItem, setSelectedCycleItem] = useState<MasterItem | null>(null);
+
+  const [internalUsers, setInternalUsers] = useState<any[]>(() => {
+    if (Array.isArray(users) && users.length > 0) return users;
+    return getGlobalUsersCache();
+  });
+
+  useEffect(() => {
+    if (Array.isArray(users) && users.length > 0) {
+      setInternalUsers(users);
+    } else {
+      api.get('/users').then(res => {
+        const userList = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
+        if (userList.length > 0) {
+          setInternalUsers(userList);
+          setGlobalUsersCache(userList);
+        }
+      }).catch(err => console.warn('Failed to load users in MastersScreen:', err));
+    }
+  }, [users]);
 
   // Edit State for tiles that are not in fully active state
   const [editingItem, setEditingItem] = useState<MasterItem | null>(null);
@@ -3834,7 +4046,7 @@ function MastersScreen({
       meaning,
       onVerify: async (password: string) => {
         try {
-          const userDisplayName = user?.displayName || user?.email || 'User';
+          const userDisplayName = getUserFullNameWithDesignation(user, internalUsers);
           const existingHistory = editingItem.history || [];
           const newHistoryItem = {
             action: 'EDITED',
@@ -3915,11 +4127,7 @@ function MastersScreen({
     } else if (nextStatus === 'ACTIVE') {
       if (!checkPerm('lookup:approve', "Access Denied: You do not have 'Approve Master Lookup' permission.")) return;
     } else if (nextStatus === 'DRAFT') {
-      if (item.status === 'DEACTIVATED') {
-        if (!checkPerm('lookup:activate', "Access Denied: You do not have 'Activate Master Lookups' permission.")) return;
-      } else {
-        if (!checkPerm('lookup:approve', "Access Denied: You do not have 'Approve Master Lookup' permission to reject records.")) return;
-      }
+      if (!checkPerm('lookup:approve', "Access Denied: You do not have 'Approve Master Lookup' permission to reject records.")) return;
     } else if (nextStatus === 'DEACTIVATED') {
       if (!checkPerm('lookup:deactivate', "Access Denied: You do not have 'Deactivate Master Lookups' permission.")) return;
     }
@@ -3937,19 +4145,13 @@ function MastersScreen({
       description = `QA Electronic Approval and certification to release option value "${item.code}" as active and ready for use.`;
       meaning = `I certify that I have approved and activated this code for manufacturing operations under GMP guidelines`;
     } else if (nextStatus === 'DRAFT') {
-      if (item.status === 'DEACTIVATED') {
-        title = 'Re-activate Master Lookup (Draft Mode)';
-        description = `Signing to re-activate the master lookup value "${item.code}" back to draft state for starting the approval pipeline.`;
-        meaning = `I certify that I am re-activating this master lookup option as Draft for review and approval`;
-      } else {
-        title = 'Reject Lookup back to Draft';
-        description = `By signing, you are rejecting option value "${item.code}" and requesting revision.`;
-        meaning = `I certify that this record is rejected back to draft for revision`;
-      }
+      title = 'Reject Lookup back to Draft';
+      description = `By signing, you are rejecting option value "${item.code}" and requesting revision.`;
+      meaning = `I certify that this record is rejected back to draft for revision`;
     } else if (nextStatus === 'DEACTIVATED') {
       title = 'Deactivate Master Lookup';
-      description = `QA Electronic Approval to deactivate the master lookup value "${item.code}". Once deactivated, it cannot be used.`;
-      meaning = `I certify that I have deactivated this master lookup option value in accordance with GAMP/GMP guidelines`;
+      description = `QA Electronic Approval to deactivate master lookup value "${item.code}". Deactivating changes the state of the tile to Draft for revision and re-authorization.`;
+      meaning = `I certify that I have deactivated this master lookup option value and returned it to Draft state in accordance with GAMP/GMP guidelines`;
     }
 
     setSigConfig({
@@ -3958,28 +4160,29 @@ function MastersScreen({
       meaning,
       onVerify: async (password: string) => {
         try {
-          const userDisplayName = user?.displayName || user?.email || 'User';
+          const targetStatus = nextStatus === 'DEACTIVATED' ? 'DRAFT' : nextStatus;
+          const userDisplayName = getUserFullNameWithDesignation(user, internalUsers);
           const existingHistory = item.history || [];
           const newHistoryItem = {
-            action: nextStatus === 'REVIEW' ? 'SUBMITTED' : 
-                    nextStatus === 'ACTIVE' ? 'APPROVED' : 
-                    nextStatus === 'DEACTIVATED' ? 'DEACTIVATED' : 
-                    (nextStatus === 'DRAFT' && item.status === 'DEACTIVATED') ? 'RE_ACTIVATED_DRAFT' : 'REJECTED_DRAFT',
+            action: nextStatus === 'DEACTIVATED' ? 'DEACTIVATED' : 
+                    nextStatus === 'REVIEW' ? 'SUBMITTED' : 
+                    nextStatus === 'ACTIVE' ? 'APPROVED' : 'REJECTED_DRAFT',
             user: userDisplayName,
             timestamp: new Date().toISOString(),
             meaning: meaning,
-            status: nextStatus
+            status: targetStatus
           };
 
           const updateData: any = {
-            status: nextStatus,
+            status: targetStatus,
+            isDeactivation: nextStatus === 'DEACTIVATED',
             password,
             signatureMeaning: meaning,
             history: [...existingHistory, newHistoryItem]
           };
 
-          if (nextStatus === 'ACTIVE') {
-            updateData.approvedBy = user?.displayName || user?.email || 'QA Head';
+          if (targetStatus === 'ACTIVE') {
+            updateData.approvedBy = userDisplayName;
             updateData.approvedDate = new Date().toISOString();
           } else {
             updateData.approvedBy = null;
@@ -3988,7 +4191,9 @@ function MastersScreen({
 
           await onUpdate(item.id, updateData);
           setShowSignature(false);
-          toast.success(`Successfully transitioned to ${nextStatus}`);
+          toast.success(nextStatus === 'DEACTIVATED' 
+            ? `Lookup "${item.code}" deactivated and returned to Draft state` 
+            : `Successfully transitioned to ${nextStatus}`);
         } catch (err: any) {
           toast.error('Signature verification failed');
         }
@@ -4058,7 +4263,8 @@ function MastersScreen({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6 bg-slate-5/50">
             {searched.map((item) => {
-              const status = item.status || 'DRAFT'; // default to DRAFT for compliance
+              const rawStatus = item.status || 'DRAFT';
+              const status = (rawStatus === 'DEACTIVATED' || rawStatus === 'INACTIVE') ? 'DRAFT' : rawStatus;
               
               return (
                 <div key={item.id} className="bg-white rounded-2xl p-5 border border-slate-150 shadow-sm flex flex-col justify-between hover:border-slate-350 transition-all hover:shadow-md space-y-4">
@@ -4078,7 +4284,6 @@ function MastersScreen({
                         <span className={`inline-block px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider leading-none ${
                           status === 'DRAFT' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
                           status === 'REVIEW' ? 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse' :
-                          status === 'DEACTIVATED' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
                           'bg-emerald-50 text-emerald-700 border border-emerald-250'
                         }`}>
                           {status}
@@ -4133,7 +4338,7 @@ function MastersScreen({
                   {status === 'ACTIVE' && item.approvedBy && (
                     <div className="pt-2 border-t border-slate-100 flex items-center gap-1 text-[10px] text-slate-400 font-mono">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                      <span className="truncate">By {item.approvedBy} on {new Date(item.approvedDate!).toLocaleDateString()}</span>
+                      <span className="truncate">By {getUserFullNameWithDesignation(item.approvedBy, internalUsers)} on {new Date(item.approvedDate!).toLocaleDateString()}</span>
                     </div>
                   )}
 
@@ -4153,10 +4358,10 @@ function MastersScreen({
                         <Button
                           size="sm"
                           variant="outline"
-                          className="rounded-full text-[10px] font-extrabold h-8 px-3 border-indigo-100 text-indigo-600 hover:bg-indigo-50"
+                          className="rounded-full text-[10px] font-extrabold h-8 px-4 border-indigo-200 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300 transition-all shadow-xs"
                           onClick={() => handleTransition(item, 'REVIEW')}
                         >
-                          Submit Review
+                          Submit
                         </Button>
                       )}
                       {status === 'REVIEW' && (
@@ -4188,20 +4393,6 @@ function MastersScreen({
                             onClick={() => handleTransition(item, 'DEACTIVATED')}
                           >
                             Deactivate
-                          </Button>
-                        </div>
-                      )}
-                      {status === 'DEACTIVATED' && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-rose-600 font-extrabold flex items-center gap-1">
-                            Deactivated
-                          </span>
-                          <Button
-                            size="sm"
-                            className="rounded-full text-[10px] font-extrabold h-8 px-3 bg-[#FF6321] hover:bg-[#e05419] text-white"
-                            onClick={() => handleTransition(item, 'DRAFT')}
-                          >
-                            Activate
                           </Button>
                         </div>
                       )}
@@ -4252,18 +4443,18 @@ function MastersScreen({
                     {/* Stage 1: DRAFT */}
                     <div className="relative">
                       <span className={`absolute -left-[31px] top-0 w-4.5 h-4.5 rounded-full border-4 border-white flex items-center justify-center shadow-sm ${
-                        selectedCycleItem.status === 'REVIEW' || selectedCycleItem.status === 'ACTIVE' || !selectedCycleItem.status || selectedCycleItem.status === 'DRAFT'
+                        selectedCycleItem.status === 'REVIEW' || selectedCycleItem.status === 'ACTIVE' || !selectedCycleItem.status || selectedCycleItem.status === 'DRAFT' || selectedCycleItem.status === 'DEACTIVATED'
                           ? 'bg-indigo-650'
                           : 'bg-slate-300'
                       }`} />
                       <div className="pl-2">
                         <p className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
                           Stage 1: DRAFT 
-                          {(selectedCycleItem.status === 'DRAFT' || !selectedCycleItem.status) && (
+                          {(selectedCycleItem.status === 'DRAFT' || selectedCycleItem.status === 'DEACTIVATED' || selectedCycleItem.status === 'INACTIVE' || !selectedCycleItem.status) && (
                             <span className="text-[9px] px-1.5 py-0.2 bg-indigo-100 text-indigo-700 font-black rounded-full uppercase scale-90 origin-left">Current</span>
                           )}
                         </p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">Value definition and configuration. Code undergoes verification. Rejections return here.</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">Value definition and configuration. QA Chemist can edit and submit for review. Deactivations return here.</p>
                       </div>
                     </div>
 
@@ -4302,20 +4493,6 @@ function MastersScreen({
                         <p className="text-[11px] text-slate-500 mt-0.5">Fully approved using electronic signatures. Released to Manufacturing for dropdown selections.</p>
                       </div>
                     </div>
-
-                    {/* Stage 4: DEACTIVATED */}
-                    {selectedCycleItem.status === 'DEACTIVATED' && (
-                      <div className="relative">
-                        <span className="absolute -left-[31.5px] top-0 w-4.5 h-4.5 rounded-full border-4 border-white flex items-center justify-center shadow-sm bg-rose-500" />
-                        <div className="pl-2">
-                          <p className="text-xs font-extrabold text-rose-600 flex items-center gap-1.5">
-                            Stage 4: DEACTIVATED
-                            <span className="text-[9px] px-1.5 py-0.2 bg-rose-100 text-rose-700 font-black rounded-full uppercase scale-90 origin-left">Current</span>
-                          </p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">This lookup value has been deactivated under electronic signature. It cannot be used in active configurations.</p>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -4326,13 +4503,13 @@ function MastersScreen({
                   </p>
                   {selectedCycleItem.status === 'ACTIVE' ? (
                     <div className="space-y-1 font-mono text-[10px] text-slate-500">
-                      <p><span className="font-semibold text-slate-700">Approved By:</span> {selectedCycleItem.approvedBy || 'Authorized QA'}</p>
+                      <p><span className="font-semibold text-slate-700">Approved By:</span> {getUserFullNameWithDesignation(selectedCycleItem.approvedBy, internalUsers) || 'Authorized QA'}</p>
                       <p><span className="font-semibold text-slate-700">Signature Date:</span> {selectedCycleItem.approvedDate ? new Date(selectedCycleItem.approvedDate).toLocaleString() : 'N/A'}</p>
                       <p><span className="font-semibold text-slate-700">Regulations:</span> Verified in accordance with 21 CFR Part 11 electronic signature rules.</p>
                     </div>
-                  ) : selectedCycleItem.status === 'DEACTIVATED' ? (
-                    <p className="text-rose-500 font-mono text-[10px] leading-relaxed">
-                      Deactivated under electronic approval. Review the full process lifecycle logs below for signatures and timestamps.
+                  ) : (selectedCycleItem.status === 'DEACTIVATED' || selectedCycleItem.history?.some((h: any) => (h.action || '').toUpperCase() === 'DEACTIVATED')) ? (
+                    <p className="text-slate-600 font-mono text-[10px] leading-relaxed">
+                      This lookup was deactivated under electronic signature and returned to Draft state for revision and re-authorization.
                     </p>
                   ) : (
                     <p className="text-slate-400 italic font-mono text-[10px]">Signature details will automatically populate once the QA manager approves and activates this lookup option value.</p>
@@ -4341,32 +4518,54 @@ function MastersScreen({
 
                 {/* Lookup Process Flow / Revision History */}
                 <div className="space-y-4 border-t border-slate-100 pt-5">
-                  <p className="text-xs font-black uppercase text-slate-400 tracking-wider font-mono">Process Flow / Lifecycle History</p>
+                  <p className="text-xs font-black uppercase text-slate-400 tracking-wider font-mono">Process Flow / Workflow History</p>
                   {selectedCycleItem.history && selectedCycleItem.history.length > 0 ? (
                     <div className="space-y-3 max-h-48 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200">
-                      {selectedCycleItem.history.map((h, idx) => (
-                        <div key={idx} className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 text-[11px] space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                              h.status === 'DRAFT' ? 'bg-slate-100 text-slate-700' :
-                              h.status === 'REVIEW' ? 'bg-amber-150 text-amber-800' :
-                              h.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' :
-                              'bg-rose-100 text-rose-800'
-                            }`}>
-                              {h.action || h.status}
-                            </span>
-                            <span className="font-mono text-slate-400 text-[10px]">{new Date(h.timestamp).toLocaleString()}</span>
-                          </div>
-                          <p className="text-slate-600 font-medium">
-                            By <span className="font-bold text-slate-800">{h.user}</span>
-                          </p>
-                          {h.meaning && (
-                            <p className="text-slate-500 italic bg-white p-1.5 rounded border border-slate-100 font-mono text-[9px] leading-relaxed">
-                              "{h.meaning}"
+                      {selectedCycleItem.history.map((h, idx) => {
+                        const actionUpper = (h.action || h.status || '').toUpperCase();
+                        let actionLabel = 'By ';
+                        if (actionUpper === 'CREATED' || (h.status === 'DRAFT' && idx === 0)) {
+                           actionLabel = 'Created by ';
+                        } else if (actionUpper === 'SUBMITTED' || actionUpper === 'REVIEW') {
+                          actionLabel = 'Submitted by ';
+                        } else if (actionUpper === 'APPROVED' || actionUpper === 'ACTIVE') {
+                          actionLabel = 'Approved by ';
+                        } else if (actionUpper === 'EDITED') {
+                          actionLabel = 'Edited by ';
+                        } else if (actionUpper === 'DEACTIVATED') {
+                          actionLabel = 'Deactivated by ';
+                        } else if (actionUpper.includes('RE_ACTIVATED')) {
+                          actionLabel = 'Re-activated as Draft by ';
+                        } else if (actionUpper.includes('REJECTED')) {
+                          actionLabel = 'Returned to Draft by ';
+                        }
+
+                        const userFullNameWithDesignation = getUserFullNameWithDesignation(h.user, internalUsers);
+
+                        return (
+                          <div key={idx} className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 text-[11px] space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                h.status === 'DRAFT' ? 'bg-slate-100 text-slate-700' :
+                                h.status === 'REVIEW' ? 'bg-amber-150 text-amber-800' :
+                                h.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' :
+                                'bg-rose-100 text-rose-800'
+                              }`}>
+                                {h.action || h.status}
+                              </span>
+                              <span className="font-mono text-slate-400 text-[10px]">{new Date(h.timestamp).toLocaleString()}</span>
+                            </div>
+                            <p className="text-slate-600 font-medium">
+                              {actionLabel}<span className="font-bold text-slate-800">{userFullNameWithDesignation}</span>
                             </p>
-                          )}
-                        </div>
-                      ))}
+                            {h.meaning && (
+                              <p className="text-slate-500 italic bg-white p-1.5 rounded border border-slate-100 font-mono text-[9px] leading-relaxed">
+                                "{h.meaning}"
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="text-xs text-slate-400 italic">No historical lifecycle flow entries found for this record.</div>

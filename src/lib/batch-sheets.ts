@@ -566,30 +566,260 @@ export function getBatchIssuedByString(batch: any, users?: any[], timeline?: any
   return 'QA Incharge (Krishan Kumar)';
 }
 
+const KNOWN_USER_DESIGNATIONS: Record<string, string> = {
+  'manjeet kumar': 'QA Chemist',
+  'gyan chand': 'QA Manager',
+  'aman thakur': 'QA Chemist',
+  'amit kumar': 'Production Incharge',
+  'ashish kumar': 'QA Incharge',
+  'ashwani sharma': 'QA Manager',
+  'digvijay singh': 'Production Incharge',
+  'dinesh kumar': 'Production Incharge',
+  's.n. dubey': 'QA Manager',
+  'dubey': 'QA Manager',
+  'krishan kumar': 'QA Incharge',
+  'nardev singh': 'Production Incharge',
+  'naresh chand': 'Production Incharge',
+  'naresh dhiman': 'QA Manager',
+  'sourabh chourasia': 'IT Admin',
+  'suraj gupta': 'Production Incharge',
+  'akshay sharma': 'System Administrator',
+  'system admin': 'System Administrator',
+  'admin': 'System Administrator'
+};
+
+let globalUsersCache: any[] = [
+  { displayName: 'Manjeet Kumar', name: 'Manjeet Kumar', username: '768108', designation: 'QA Chemist', role: 'QA Chemist' },
+  { displayName: 'Gyan Chand', name: 'Gyan Chand', username: '9126', designation: 'QA Manager', role: 'QA Manager' },
+  { displayName: 'Aman Thakur', name: 'Aman Thakur', username: '769185', designation: 'QA Chemist', role: 'QA Chemist' },
+  { displayName: 'Amit Kumar', name: 'Amit Kumar', username: '727277', designation: 'Production Incharge', role: 'Production Incharge' },
+  { displayName: 'Ashish Kumar', name: 'Ashish Kumar', username: '767669', designation: 'QA Incharge', role: 'QA Incharge' },
+  { displayName: 'Ashwani Sharma', name: 'Ashwani Sharma', username: '3952', designation: 'QA Manager', role: 'QA Manager' },
+  { displayName: 'Digvijay Singh', name: 'Digvijay Singh', username: '766926', designation: 'Production Incharge', role: 'Production Incharge' },
+  { displayName: 'Dinesh Kumar', name: 'Dinesh Kumar', username: '766704', designation: 'Production Incharge', role: 'Production Incharge' },
+  { displayName: 'S.N. Dubey', name: 'S.N. Dubey', username: '9128', designation: 'QA Manager', role: 'QA Manager' },
+  { displayName: 'Krishan Kumar', name: 'Krishan Kumar', username: '767680', designation: 'QA Incharge', role: 'QA Incharge' },
+  { displayName: 'Nardev Singh', name: 'Nardev Singh', username: '766898', designation: 'Production Incharge', role: 'Production Incharge' },
+  { displayName: 'Naresh Chand', name: 'Naresh Chand', username: '11625', designation: 'Production Incharge', role: 'Production Incharge' },
+  { displayName: 'Naresh Dhiman', name: 'Naresh Dhiman', username: '12617', designation: 'QA Manager', role: 'QA Manager' },
+  { displayName: 'Sourabh Chourasia', name: 'Sourabh Chourasia', username: '7509', designation: 'IT Admin', role: 'IT Admin' },
+  { displayName: 'Suraj Gupta', name: 'Suraj Gupta', username: '767199', designation: 'Production Incharge', role: 'Production Incharge' },
+  { displayName: 'Akshay Sharma (Admin)', name: 'Akshay Sharma', email: 'shakshay04@gmail.com', designation: 'System Administrator', role: 'ADMIN' },
+  { displayName: 'System Admin (BRIMS)', name: 'System Admin', email: 'admin@brims.com', designation: 'System Administrator', role: 'ADMIN' }
+];
+
+export function setGlobalUsersCache(users: any[]) {
+  if (Array.isArray(users) && users.length > 0) {
+    globalUsersCache = users;
+  }
+}
+
+export function getGlobalUsersCache(): any[] {
+  return globalUsersCache;
+}
+
 /**
  * Formats a user into "Full Name (Designation)".
  * Strictly cleans up any pre-existing parenthetical text inside displayName (e.g. "Akshay Sharma (Admin)" -> "Akshay Sharma")
- * and extracts their official Designation from the user profile.
+ * and extracts their official Designation from the user profile or users list.
+ * Removes hardcoded static names, allowing dynamic resolution as workflow advances.
  */
-export function getUserFullNameWithDesignation(user: any): string {
-  if (!user) return 'Akshay Sharma (Admin)';
+export function getUserFullNameWithDesignation(
+  userOrIdentifier: any,
+  users?: any[],
+  fallbackText: string = ''
+): string {
+  if (!userOrIdentifier) return fallbackText;
 
-  let rawName = user.name || user.displayName || user.username || (user.email ? user.email.split('@')[0] : 'Akshay Sharma');
-  // Strip trailing parenthetical e.g. "Akshay Sharma (Admin)" -> "Akshay Sharma"
-  let cleanName = String(rawName).replace(/\s*\([^)]*\)\s*$/, '').trim();
-  if (!cleanName) cleanName = 'Akshay Sharma';
+  const effectiveUsers = (Array.isArray(users) && users.length > 0) ? users : globalUsersCache;
 
-  // Extract official designation: prefer designation, designationName, functionalRole, then role
-  let designation = user.designation || user.designationName || user.functionalRole;
-  if (!designation) {
-    if (user.role) {
-      designation = user.role.toUpperCase() === 'ADMIN' ? 'Admin' : user.role;
-    } else {
-      designation = 'Admin';
+  // If input is an object
+  if (typeof userOrIdentifier === 'object') {
+    let rawName = userOrIdentifier.name || userOrIdentifier.displayName || userOrIdentifier.username || (userOrIdentifier.email ? userOrIdentifier.email.split('@')[0] : '');
+    let cleanName = String(rawName || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    if (!cleanName && userOrIdentifier.email) {
+      cleanName = userOrIdentifier.email.split('@')[0];
+    }
+    if (!cleanName) return fallbackText;
+
+    // Extract official designation: prefer designation, designationName, functionalRole, then role
+    let designation = userOrIdentifier.designation || userOrIdentifier.designationName || userOrIdentifier.functionalRole;
+    if (!designation && Array.isArray(effectiveUsers) && (userOrIdentifier.id || userOrIdentifier.uid || userOrIdentifier.email || userOrIdentifier.name || userOrIdentifier.displayName)) {
+      const match = effectiveUsers.find((u: any) => 
+        (userOrIdentifier.id && (u.id === userOrIdentifier.id || u.uid === userOrIdentifier.id)) ||
+        (userOrIdentifier.uid && (u.id === userOrIdentifier.uid || u.uid === userOrIdentifier.uid)) ||
+        (userOrIdentifier.email && u.email && u.email.toLowerCase() === userOrIdentifier.email.toLowerCase()) ||
+        (cleanName && u.displayName && u.displayName.toLowerCase().includes(cleanName.toLowerCase())) ||
+        (cleanName && u.name && u.name.toLowerCase().includes(cleanName.toLowerCase()))
+      );
+      if (match) {
+        designation = match.designation || match.designationName || match.functionalRole || match.role;
+      }
+    }
+
+    if (!designation && cleanName) {
+      const lower = cleanName.toLowerCase();
+      if (KNOWN_USER_DESIGNATIONS[lower]) {
+        designation = KNOWN_USER_DESIGNATIONS[lower];
+      }
+    }
+
+    if (!designation && userOrIdentifier.role) {
+      designation = userOrIdentifier.role.toUpperCase() === 'ADMIN' ? 'System Administrator' : userOrIdentifier.role.replace(/_/g, ' ');
+    }
+
+    return designation ? `${cleanName} (${designation})` : cleanName;
+  }
+
+  // If input is a string (userId, email, or name)
+  const str = String(userOrIdentifier).trim();
+  if (!str) return fallbackText;
+
+  // If string already matches "Name (Designation)" format, verify it has a valid designation
+  const matchParen = str.match(/^([^(]+)\(([^)]+)\)$/);
+  if (matchParen) {
+    const rawName = matchParen[1].trim();
+    const rawDesig = matchParen[2].trim();
+    return `${rawName} (${rawDesig})`;
+  }
+
+  // Try looking up in effectiveUsers array
+  if (Array.isArray(effectiveUsers) && effectiveUsers.length > 0) {
+    const cleanLookupStr = str.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+    const parts = str.includes(' - ') ? str.split(' - ') : null;
+    const part0 = parts ? parts[0].trim().toLowerCase() : '';
+    const part1 = parts ? parts.slice(1).join(' - ').trim().toLowerCase() : '';
+
+    const found = effectiveUsers.find((u: any) => 
+      u.id === str ||
+      u.uid === str ||
+      (u.email && u.email.toLowerCase() === str.toLowerCase()) ||
+      (u.employeeId && u.employeeId.toLowerCase() === str.toLowerCase()) ||
+      (u.username && u.username.toLowerCase() === str.toLowerCase()) ||
+      (u.displayName && u.displayName.toLowerCase() === str.toLowerCase()) ||
+      (u.name && u.name.toLowerCase() === str.toLowerCase()) ||
+      (u.displayName && u.displayName.toLowerCase() === cleanLookupStr) ||
+      (u.name && u.name.toLowerCase() === cleanLookupStr) ||
+      (u.username && u.username.toLowerCase() === cleanLookupStr) ||
+      (part0 && u.employeeId && u.employeeId.toLowerCase() === part0) ||
+      (part1 && u.username && u.username.toLowerCase() === part1) ||
+      (part1 && u.displayName && u.displayName.toLowerCase() === part1) ||
+      (part1 && u.name && u.name.toLowerCase() === part1)
+    );
+    if (found) {
+      const rawName = found.displayName || found.name || found.username || (found.email ? found.email.split('@')[0] : str);
+      const cleanName = String(rawName).replace(/\s*\([^)]*\)\s*$/, '').trim();
+      const designation = found.designation || found.designationName || found.functionalRole || (found.role ? (found.role.toUpperCase() === 'ADMIN' ? 'System Administrator' : found.role.replace(/_/g, ' ')) : '');
+      return designation ? `${cleanName} (${designation})` : cleanName;
     }
   }
 
-  return `${cleanName} (${designation})`;
+  // Fallback to known static lookup if not matched in dynamic list
+  const cleanLookupStr = str.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+  if (KNOWN_USER_DESIGNATIONS[cleanLookupStr]) {
+    const cleanName = str.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    return `${cleanName} (${KNOWN_USER_DESIGNATIONS[cleanLookupStr]})`;
+  }
+
+  // If string is an email
+  if (str.includes('@')) {
+    const namePart = str.split('@')[0].replace(/[._-]/g, ' ');
+    return namePart.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+
+  return str;
+}
+
+/**
+ * Formats a user into "Employee ID - Full Name (Designation)".
+ * If the user's Employee ID is known or extracted from legacy strings like "EMP-XXXXX - YYYYY",
+ * it formats as: "EMP-XXXXX - Full Name (Designation)".
+ * If no Employee ID is found or it is 'N/A', it falls back to "Full Name (Designation)".
+ */
+export function getUserEmployeeIdAndFullNameWithDesignation(
+  userOrIdentifier: any,
+  users?: any[],
+  fallbackText: string = 'N/A'
+): string {
+  if (!userOrIdentifier) return fallbackText;
+
+  // 1. If userOrIdentifier is an object
+  if (typeof userOrIdentifier === 'object') {
+    let matchedUser = null;
+    if (Array.isArray(users) && users.length > 0) {
+      matchedUser = users.find((u: any) =>
+        (userOrIdentifier.id && (u.id === userOrIdentifier.id || u.uid === userOrIdentifier.id)) ||
+        (userOrIdentifier.uid && (u.id === userOrIdentifier.uid || u.uid === userOrIdentifier.uid)) ||
+        (userOrIdentifier.employeeId && u.employeeId && u.employeeId.toLowerCase() === userOrIdentifier.employeeId.toLowerCase()) ||
+        (userOrIdentifier.email && u.email && u.email.toLowerCase() === userOrIdentifier.email.toLowerCase())
+      );
+    }
+    const target = matchedUser || userOrIdentifier;
+    const employeeId = target.employeeId || userOrIdentifier.employeeId;
+    const fullNameWithDesig = getUserFullNameWithDesignation(target, users);
+
+    if (employeeId && employeeId !== 'N/A') {
+      return `${employeeId} - ${fullNameWithDesig}`;
+    }
+    return fullNameWithDesig || fallbackText;
+  }
+
+  // 2. If userOrIdentifier is a string
+  const str = String(userOrIdentifier).trim();
+  if (!str) return fallbackText;
+
+  // Check if string contains " - " (e.g. "EMP-768108 - 768108")
+  let extractedEmpId = '';
+  let remainder = str;
+  if (str.includes(' - ')) {
+    const parts = str.split(' - ');
+    extractedEmpId = parts[0].trim();
+    remainder = parts.slice(1).join(' - ').trim();
+  }
+
+  // Search in users array
+  let foundUser: any = null;
+  if (Array.isArray(users) && users.length > 0) {
+    const cleanLookupStr = str.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+    const cleanRemainder = remainder.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+
+    foundUser = users.find((u: any) => {
+      if (!u) return false;
+      if (u.id === str || u.uid === str) return true;
+      if (u.email && u.email.toLowerCase() === str.toLowerCase()) return true;
+      if (u.employeeId && u.employeeId.toLowerCase() === str.toLowerCase()) return true;
+      if (u.username && u.username.toLowerCase() === str.toLowerCase()) return true;
+      if (u.displayName && u.displayName.toLowerCase() === cleanLookupStr) return true;
+      if (u.name && u.name.toLowerCase() === cleanLookupStr) return true;
+
+      // Match with parts
+      if (extractedEmpId && u.employeeId && u.employeeId.toLowerCase() === extractedEmpId.toLowerCase()) return true;
+      if (remainder && u.username && u.username.toLowerCase() === remainder.toLowerCase()) return true;
+      if (remainder && (u.id === remainder || u.uid === remainder)) return true;
+      if (remainder && u.email && u.email.toLowerCase() === remainder.toLowerCase()) return true;
+      if (remainder && u.displayName && u.displayName.toLowerCase() === cleanRemainder) return true;
+      if (remainder && u.name && u.name.toLowerCase() === cleanRemainder) return true;
+
+      return false;
+    });
+  }
+
+  if (foundUser) {
+    const employeeId = foundUser.employeeId || (extractedEmpId.toUpperCase().startsWith('EMP-') ? extractedEmpId : 'N/A');
+    const fullNameWithDesig = getUserFullNameWithDesignation(foundUser, users);
+    if (employeeId && employeeId !== 'N/A') {
+      return `${employeeId} - ${fullNameWithDesig}`;
+    }
+    return fullNameWithDesig || fallbackText;
+  }
+
+  // If user not in users list, but we have extractedEmpId
+  if (extractedEmpId) {
+    const fullNameWithDesig = getUserFullNameWithDesignation(remainder, users);
+    return `${extractedEmpId} - ${fullNameWithDesig}`;
+  }
+
+  return getUserFullNameWithDesignation(str, users, fallbackText);
 }
 
 /**

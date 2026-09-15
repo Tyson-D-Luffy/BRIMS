@@ -37,13 +37,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { cn } from '../lib/utils';
-import { computeSheetCustody } from '../lib/batch-sheets';
+import { computeSheetCustody, getUserFullNameWithDesignation, setGlobalUsersCache } from '../lib/batch-sheets';
 
 interface BatchSheetCustodyManagerProps {
   batch: BatchIssuance;
   productMaster?: ProductMaster | null;
   onBatchUpdated: () => Promise<void>;
   onPreviewSheet?: (sheet: BatchSheetItem) => void;
+  users?: any[];
 }
 
 type CustodyOperation = 
@@ -59,11 +60,28 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
   batch,
   productMaster,
   onBatchUpdated,
-  onPreviewSheet
+  onPreviewSheet,
+  users = []
 }) => {
   const { user } = useAuth();
   const baseRole = getUserBaseRole(user);
   const userPerms = user?.permissions || [];
+  const [internalUsers, setInternalUsers] = useState<any[]>(users);
+
+  React.useEffect(() => {
+    if (users && users.length > 0) {
+      setInternalUsers(users);
+      setGlobalUsersCache(users);
+    } else {
+      api.get('/users').then(res => {
+        const list = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
+        if (list.length > 0) {
+          setInternalUsers(list);
+          setGlobalUsersCache(list);
+        }
+      }).catch(() => {});
+    }
+  }, [users]);
 
   // Active filter tab
   const [filterTab, setFilterTab] = useState<'ALL' | 'HANDOVER' | 'PRODUCTION' | 'QA_REVIEW' | 'COMPLETED' | 'DISCARDED'>('ALL');
@@ -1260,7 +1278,7 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                         {entry.reason || 'Operational progression'}
                       </p>
                       <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
-                        <span>Performed By: <strong>{entry.performedBy || entry.userEmail}</strong></span>
+                        <span>Performed By: <strong>{getUserFullNameWithDesignation(entry.performedBy || entry.userEmail, internalUsers)}</strong></span>
                         {entry.signatureId && (
                           <span className="font-mono text-indigo-600">Sig: {entry.signatureId.substring(0, 8)}...</span>
                         )}

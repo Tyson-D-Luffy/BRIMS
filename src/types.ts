@@ -460,6 +460,11 @@ export interface BatchIssuance {
   completedByName?: string;
   completedByRole?: string;
   completedByEmployeeId?: string;
+  handoverPreparedBy?: string;
+  handedOverBy?: string;
+  productionReceivedBy?: string;
+  qaReviewSubmittedBy?: string;
+  qaReceivedBy?: string;
 
   // Individual Handover & Review parent state tracking
   handoverSubStatus?: 'NOT_STARTED' | 'HANDOVER_IN_PROGRESS' | 'HANDOVER_COMPLETED';

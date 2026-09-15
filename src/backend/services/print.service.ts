@@ -92,11 +92,11 @@ export function initializeBatchSheetsHelper(batchData: any): BatchSheetItem[] {
       activeLock: null,
       printedAt: isAlreadyPrinted ? (batchData.completedAt || batchData.updatedAt || batchData.createdAt || null) : null,
       printedBy: isAlreadyPrinted ? (batchData.completedBy || batchData.issuedBy || null) : null,
-      printedByName: isAlreadyPrinted ? (batchData.completedByName || batchData.issuedByName || 'Akshay Sharma') : null,
+      printedByName: isAlreadyPrinted ? (batchData.completedByName || batchData.issuedByName || null) : null,
       printedByEmployeeId: isAlreadyPrinted ? (batchData.completedByEmployeeId || 'N/A') : null,
       completedAt: isAlreadyPrinted ? (batchData.completedAt || batchData.updatedAt || batchData.createdAt || null) : null,
       completedBy: isAlreadyPrinted ? (batchData.completedBy || batchData.issuedBy || null) : null,
-      completedByName: isAlreadyPrinted ? (batchData.completedByName || batchData.issuedByName || 'Akshay Sharma') : null,
+      completedByName: isAlreadyPrinted ? (batchData.completedByName || batchData.issuedByName || null) : null,
       completedByEmployeeId: isAlreadyPrinted ? (batchData.completedByEmployeeId || 'N/A') : null,
       history: isAlreadyPrinted ? [
         {
@@ -104,9 +104,9 @@ export function initializeBatchSheetsHelper(batchData: any): BatchSheetItem[] {
           action: 'PRINT_COMPLETED',
           status: 'PRINT_COMPLETED',
           timestamp: batchData.completedAt || batchData.createdAt || new Date().toISOString(),
-          performedBy: batchData.completedByName || batchData.issuedByName || 'Akshay Sharma',
+          performedBy: batchData.completedByName || batchData.issuedByName || 'Operator',
           userId: batchData.completedBy || batchData.issuedBy || 'system',
-          userEmail: 'akshay.sharma@morepen.com',
+          userEmail: batchData.completedByEmail || batchData.issuedByEmail || 'system@brims.internal',
           reason: 'Initial system issuance & certification',
           copyNumber: 1
         }

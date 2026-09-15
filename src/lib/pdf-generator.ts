@@ -204,6 +204,7 @@ export const generateRequestPreviewPDF = async (data: {
   requestId?: string;
   overlayPositions?: Record<string, { x: number; y: number; visible?: boolean; text?: string }>;
   isForPrint?: boolean;
+  onlyShowBatchNoOverlay?: boolean;
 }) => {
   const fileUrl = data.master.files?.[0]?.url;
 
@@ -606,12 +607,17 @@ export const generateRequestPreviewPDF = async (data: {
           let resolvedPrintedBy = data.printedBy;
           if (!resolvedPrintedBy) {
             if (data.userInfo) {
-              const rawName = data.userInfo.name || data.userInfo.displayName || data.userInfo.username || 'Akshay Sharma';
-              const cleanName = String(rawName).replace(/\s*\([^)]*\)\s*$/, '').trim() || 'Akshay Sharma';
-              const desig = data.userInfo.designation || (data.userInfo.role ? (data.userInfo.role.toUpperCase() === 'ADMIN' ? 'Admin' : data.userInfo.role) : '') || 'Admin';
+              const rawName = data.userInfo.name || data.userInfo.displayName || data.userInfo.username || 'Operator';
+              const cleanName = String(rawName).replace(/\s*\([^)]*\)\s*$/, '').trim() || 'Operator';
+              const desig = data.userInfo.designation || (data.userInfo.role ? (data.userInfo.role.toUpperCase() === 'ADMIN' ? 'System Administrator' : data.userInfo.role) : '') || 'System Administrator';
               resolvedPrintedBy = `${cleanName} (${desig})`;
             } else {
-              resolvedPrintedBy = 'Akshay Sharma (Admin)';
+              resolvedPrintedBy = 'System Administrator';
+            }
+          } else if (!resolvedPrintedBy.includes('(') && data.userInfo) {
+            const desig = data.userInfo.designation || (data.userInfo.role ? (data.userInfo.role.toUpperCase() === 'ADMIN' ? 'System Administrator' : data.userInfo.role) : '');
+            if (desig) {
+              resolvedPrintedBy = `${resolvedPrintedBy.trim()} (${desig})`;
             }
           }
           resolvedPrintedBy = resolvedPrintedBy.replace(/\s*\(([^)]+)\)\s*\(\1\)$/i, ' ($1)').trim();
@@ -642,6 +648,7 @@ export const generateRequestPreviewPDF = async (data: {
 
           Object.entries(finalOverlays).forEach(([key, item]: [string, any]) => {
             if (!item || item.visible === false) return;
+            if (data.onlyShowBatchNoOverlay && key !== 'batchNo') return;
 
             const xPct = typeof item.x === 'number' ? item.x : (defaultOverlays[key]?.x ?? 0);
             const yPct = typeof item.y === 'number' ? item.y : (defaultOverlays[key]?.y ?? 0);
