@@ -1,7 +1,7 @@
 import { Response, NextFunction } from "express";
 import { AuthRequest } from "./auth.middleware.ts";
 import { db, ensureAuth } from "../config/firebase-client.ts";
-import { adminDb } from "../config/firebase-admin.ts";
+import { adminDb, checkAdminHealth, markAdminUnhealthy } from "../config/firebase-admin.ts";
 import { doc, getDoc } from "firebase/firestore";
 import {
   WorkflowEntityType,
@@ -87,21 +87,32 @@ export function authorizeWorkflowTransition(
       } else if (id) {
         const collName = ENTITY_COLLECTION_MAP[entityType];
         if (collName) {
-          try {
-            const adminDoc = await adminDb.collection(collName).doc(id).get();
-            if (adminDoc.exists) {
-              record = { id: adminDoc.id, ...adminDoc.data() };
+          const useAdmin = await checkAdminHealth();
+          if (useAdmin) {
+            try {
+              const adminDoc = await adminDb.collection(collName).doc(id).get();
+              if (adminDoc.exists) {
+                record = { id: adminDoc.id, ...adminDoc.data() };
+              }
+            } catch (adminErr: any) {
+              if (adminErr?.code === 7 || adminErr?.message?.includes("PERMISSION_DENIED") || adminErr?.message?.includes("insufficient permissions")) {
+                markAdminUnhealthy();
+              } else {
+                console.warn(`[workflowAuth] AdminDb fetch failed for ${collName}/${id}:`, adminErr?.message || adminErr);
+              }
             }
-          } catch (adminErr) {
-            // Fallback to client SDK
+          }
+
+          // Fallback to client SDK if adminDb did not find it or admin is unhealthy
+          if (!record) {
             try {
               await ensureAuth();
               const snap = await getDoc(doc(db, collName, id));
               if (snap.exists()) {
                 record = { id: snap.id, ...snap.data() };
               }
-            } catch (clientErr) {
-              console.warn(`[workflowAuth] Client fallback fetch failed for ${collName}/${id}:`, clientErr);
+            } catch (clientErr: any) {
+              console.warn(`[workflowAuth] Client fallback fetch failed for ${collName}/${id}:`, clientErr?.message || clientErr);
             }
           }
         }

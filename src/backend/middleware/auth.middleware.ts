@@ -81,12 +81,12 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
         // We suspect it might be our custom JWT
         const decoded = jwt.verify(token, getJwtSecret()) as any;
         
-        // Dynamically inject full multi-branch admin permissions for the system admin email
+        // Dynamically inject full multi-branch admin permissions for system admin or admin role
         const isSystemAdmin = decoded.email && decoded.email.toLowerCase() === 'shakshay04@gmail.com';
-        if (isSystemAdmin) {
+        if (isSystemAdmin || decoded.role === "ADMIN") {
           decoded.role = "ADMIN";
-          decoded.allowedBranches = ["Masulkhana", "Baddi"];
-          decoded.defaultBranch = "Masulkhana";
+          decoded.allowedBranches = decoded.allowedBranches || ["Masulkhana", "Baddi"];
+          decoded.defaultBranch = decoded.defaultBranch || "Masulkhana";
           decoded.multiBranchAccess = true;
           decoded.permissions = ALL_ADMIN_PERMISSIONS;
         }

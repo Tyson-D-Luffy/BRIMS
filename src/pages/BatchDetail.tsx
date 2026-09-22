@@ -629,7 +629,7 @@ export default function BatchDetail() {
     : '';
 
   return (
-    <div className="space-y-8 max-w-[1600px] mx-auto pb-20">
+    <div className="space-y-8 w-full pb-20">
       {/* Header */}
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
@@ -705,20 +705,6 @@ export default function BatchDetail() {
             </Button>
           )}
 
-          {batch.status === 'READY_FOR_PRODUCTION_HANDOVER' && (user?.permissions?.includes('batch:approve') || user?.permissions?.includes('batch:review') || user?.permissions?.includes('op:ready_for_handover') || user?.permissions?.includes('batch:print') || getUserBaseRole(user) === 'ADMIN' || getUserBaseRole(user) === 'QA') && (
-            <Button 
-              onClick={handleHandoverToProduction}
-              disabled={updatingStatus}
-              className="rounded-full px-6 h-12 bg-orange-600 text-white hover:bg-orange-700 font-bold"
-            >
-              {updatingStatus ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Play className="w-4 h-4 mr-2" />
-              )}
-              Handover to Production
-            </Button>
-          )}
 
           {batch.status === 'HANDED_OVER' && (user?.permissions?.includes('batch:sign') || user?.permissions?.includes('batch:create') || user?.permissions?.includes('op:production_in_progress') || ['ADMIN', 'PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER', 'OPERATOR'].includes(getUserBaseRole(user))) && (
             <Button 
@@ -732,23 +718,6 @@ export default function BatchDetail() {
                 <CheckCircle2 className="w-4 h-4 mr-2" />
               )}
               Received
-            </Button>
-          )}
-
-          {((batch.status === 'PRODUCTION_IN_PROGRESS') ||
-            (['READY_FOR_PRODUCTION_HANDOVER', 'HANDED_OVER'].includes(batch.status) && (batch.batchSheets || []).some(s => (s.handoverStatus === 'HANDED_OVER_TO_PRODUCTION' || s.productionReceiptStatus === 'RECEIVED_BY_PRODUCTION') && s.qaReturnStatus !== 'SENT_FOR_QA_REVIEW' && s.qaReviewStatus !== 'QA_REVIEW_COMPLETED'))) && 
-           (user?.permissions?.includes('batch:sign') || user?.permissions?.includes('batch:edit') || user?.permissions?.includes('op:ready_for_qa_review') || user?.permissions?.includes('op:production_in_progress') || ['ADMIN', 'PRODUCTION_INCHARGE', 'PRODUCTION_MANAGER', 'OPERATOR'].includes(getUserBaseRole(user))) && (
-            <Button 
-              onClick={handleBatchSheetFilled}
-              disabled={updatingStatus}
-              className="rounded-full px-6 h-12 bg-amber-600 text-white hover:bg-amber-700 font-bold"
-            >
-              {updatingStatus ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-              )}
-              Send back For QA Review
             </Button>
           )}
 

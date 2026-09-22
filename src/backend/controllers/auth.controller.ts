@@ -14,6 +14,7 @@ const configPath = path.join(process.cwd(), "firebase-applet-config.json");
 const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
 
 import { ALL_ADMIN_PERMISSIONS } from "../middleware/auth.middleware.ts";
+import { getDefaultPermissionsForDesignation } from "../../constants/designationProfiles.ts";
 
 const getJwtSecret = () => process.env.JWT_SECRET || "brims-super-secret-key-123";
 
@@ -438,7 +439,9 @@ export class AuthController {
       }
 
       const role = userFunctionalRole;
-      const permissions = userData.permissions || [];
+      const permissions = (userData.permissions && userData.permissions.length > 0)
+        ? userData.permissions
+        : (isSystemAdmin || role === "ADMIN" ? ALL_ADMIN_PERMISSIONS : getDefaultPermissionsForDesignation(userData?.designation || role).permissions);
       const defaultBranch = userData.defaultBranch || "Masulkhana";
       const allowedBranches = userData.allowedBranches || ["Masulkhana"];
       const multiBranchAccess = !!userData.multiBranchAccess;

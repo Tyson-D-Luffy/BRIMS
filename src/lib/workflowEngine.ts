@@ -982,11 +982,11 @@ export const WORKFLOW_STAGE_DEFINITIONS: Record<WorkflowEntityType, Record<strin
     'DRAFT': {
       state: 'DRAFT',
       stageName: 'Batch Number Draft',
-      stagePermissions: ['batch_number:create'],
+      stagePermissions: ['batch_number:create', 'batch_number:submit'],
       actions: {
-        'edit': { label: 'Edit Record', actionPermission: 'batch_number:create' },
-        'submit': { label: 'Submit for Approval', actionPermission: 'batch_number:submit', nextState: 'PENDING_APPROVAL' },
-        'delete': { label: 'Delete Record', actionPermission: 'batch_number:create' }
+        'edit': { label: 'Edit Record', actionPermission: ['batch_number:create', 'batch_number:submit'] },
+        'submit': { label: 'Submit for Approval', actionPermission: ['batch_number:submit', 'batch_number:create'], nextState: 'PENDING_APPROVAL' },
+        'delete': { label: 'Delete Record', actionPermission: ['batch_number:create', 'batch_number:submit'] }
       }
     },
     'PENDING_APPROVAL': {
@@ -1250,8 +1250,21 @@ export function canPerformWorkflowAction(params: WorkflowAuthParams): WorkflowAu
   }
 
   // 1. STAGE AUTHORITY CHECK
-  // Administrative roles must NOT bypass stage authority for GMP workflow actions
-  const userPerms: string[] = user?.permissions || [];
+  const isAdmin = getUserBaseRole(user) === 'ADMIN';
+  const userPerms: string[] = [
+    ...(user?.permissions || []),
+    ...(isAdmin ? [
+      "user:create", "user:view", "user:edit", "user:delete",
+      "batch:create", "batch:view", "batch:edit", "batch:sign", "batch:approve", "batch:preview",
+      "batch_sheet_master:create", "batch_sheet_master:edit", "batch_sheet_master:submit", "batch_sheet_master:review", "batch_sheet_master:approve", "batch_sheet_master:reject", "batch_sheet_master:return", "batch_sheet_master:deactivate",
+      "create:product", "edit:product", "product:submit", "product:review", "product:approve", "product:reject", "product:return", "product:deactivate",
+      "lookup:create", "lookup:edit", "lookup:submit", "lookup:approve", "lookup:activate", "lookup:deactivate",
+      "op:issued", "op:ready_for_handover", "op:production_in_progress", "op:ready_for_qa_review", "op:completed", "op:return_for_correction",
+      "department:create", "department:submit", "department:approve", "designation:create", "designation:submit", "designation:approve",
+      "batch_number:create", "batch_number:submit", "batch_number:approve", "format:create", "format:edit", "format:submit", "format:approve",
+      "audit:view"
+    ] : [])
+  ];
   const stageAuthorized = stageDef.stagePermissions.some(perm => userPerms.includes(perm));
 
   if (!stageAuthorized) {

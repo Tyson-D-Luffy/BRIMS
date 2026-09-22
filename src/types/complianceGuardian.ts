@@ -154,13 +154,59 @@ export interface ComplianceAuditLog {
 export interface LearningEngineEntry {
   id: string;
   findingId: string;
-  domain: ComplianceDomain;
-  userDecision: 'APPROVED' | 'REJECTED';
+  findingTitle?: string;
+  domain?: ComplianceDomain;
+  userDecision: 'APPROVED' | 'REJECTED' | 'MODIFIED';
   actualRootCause: string;
   capaId: string;
-  capaPlan: string;
+  capaPlan?: string;
   accuracyRating: number;
   reviewedBy: string;
+  reviewedByEmail?: string;
   reviewedAt: string;
+  notes?: string;
   retrainedStatus: 'PENDING' | 'INCORPORATED';
+}
+
+export interface InterceptorLogEntry {
+  id: string;
+  time: string;
+  timestamp: string;
+  event: string;
+  user: string;
+  userEmail?: string;
+  branch: string;
+  module: string;
+  latency: string;
+  eval: 'PASS' | 'FLAGGED_OFF_HOURS' | 'FLAGGED_ANOMALY' | 'FLAGGED_FORMAT_WARN' | 'FLAGGED_PARAM_DEVIATION';
+  details?: string;
+}
+
+export interface InterceptorStreamData {
+  logs: InterceptorLogEntry[];
+  summary: {
+    totalIntercepted: number;
+    passCount: number;
+    flaggedCount: number;
+    passRate: number;
+    avgLatency: string;
+    activeChannels: string[];
+    lastPolledAt: string;
+  };
+}
+
+export interface LearningBaseMetrics {
+  totalReviews: number;
+  accuracyRate: number;
+  approvedCapaCount: number;
+  falsePositiveCount: number;
+  falsePositiveRate: number;
+  averageRating: number;
+  knowledgeBaseVersion: string;
+  promptVersion: string;
+}
+
+export interface LearningBaseData {
+  entries: LearningEngineEntry[];
+  metrics: LearningBaseMetrics;
 }

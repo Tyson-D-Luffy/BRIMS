@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   BatchIssuance, 
   BatchSheetItem, 
@@ -28,7 +28,9 @@ import {
   AlertTriangle,
   FileCheck2,
   Layers,
-  RotateCcw
+  RotateCcw,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -98,6 +100,19 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
 
   // Audit history modal
   const [auditSheet, setAuditSheet] = useState<BatchSheetItem | null>(null);
+
+  // Full Screen view mode
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
 
   // Normalize sheets
   const sheets: BatchSheetItem[] = useMemo(() => {
@@ -290,13 +305,88 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
     setSelectedSheetIds([]);
   };
 
+  // Selected sheets eligible per operation
+  const selectedSheets = useMemo(() => {
+    return selectedSheetIds.map(id => sheets.find(s => s.id === id)).filter(Boolean) as BatchSheetItem[];
+  }, [selectedSheetIds, sheets]);
+
+  const selectedHandoverSheets = useMemo(() => {
+    return selectedSheets.filter(isSheetEligibleForHandover);
+  }, [selectedSheets]);
+
+  const selectedProductionReceiveSheets = useMemo(() => {
+    return selectedSheets.filter(isSheetEligibleForProductionReceive);
+  }, [selectedSheets]);
+
+  const selectedSendQaReviewSheets = useMemo(() => {
+    return selectedSheets.filter(isSheetEligibleForQaReturn);
+  }, [selectedSheets]);
+
+  const selectedQaReceiveSheets = useMemo(() => {
+    return selectedSheets.filter(isSheetEligibleForQaReceive);
+  }, [selectedSheets]);
+
+  const selectedCompleteQaReviewSheets = useMemo(() => {
+    return selectedSheets.filter(isSheetEligibleForQaReviewComplete);
+  }, [selectedSheets]);
+
+  const selectedReturnToQaSheets = useMemo(() => {
+    return selectedSheets.filter(isSheetEligibleForReturnToQa);
+  }, [selectedSheets]);
+
+  const selectedReceiveReturnedSheets = useMemo(() => {
+    return selectedSheets.filter(isSheetEligibleForQaReceiveReturned);
+  }, [selectedSheets]);
+
+  const isAllFilteredSelected = filteredSheets.length > 0 && filteredSheets.every(s => selectedSheetIds.includes(s.id));
+  const isSomeFilteredSelected = filteredSheets.some(s => selectedSheetIds.includes(s.id)) && !isAllFilteredSelected;
+
+  const handleToggleSelectAllFiltered = () => {
+    if (isAllFilteredSelected) {
+      setSelectedSheetIds(prev => prev.filter(id => !filteredSheets.some(s => s.id === id)));
+    } else {
+      const newIds = Array.from(new Set([...selectedSheetIds, ...filteredSheets.map(s => s.id)]));
+      setSelectedSheetIds(newIds);
+    }
+  };
+
   // Open operation modal
   const handleOpenOperation = (op: CustodyOperation, specificSheetId?: string) => {
     if (specificSheetId) {
       setSelectedSheetIds([specificSheetId]);
-    } else if (selectedSheetIds.length === 0) {
-      toast.error('Please select at least one Batch Sheet.');
-      return;
+    } else {
+      let eligibleIds: string[] = [];
+      switch (op) {
+        case 'HANDOVER':
+          eligibleIds = selectedHandoverSheets.map(s => s.id);
+          break;
+        case 'PRODUCTION_RECEIVE':
+          eligibleIds = selectedProductionReceiveSheets.map(s => s.id);
+          break;
+        case 'SEND_QA_REVIEW':
+          eligibleIds = selectedSendQaReviewSheets.map(s => s.id);
+          break;
+        case 'QA_RECEIVE':
+          eligibleIds = selectedQaReceiveSheets.map(s => s.id);
+          break;
+        case 'COMPLETE_QA_REVIEW':
+          eligibleIds = selectedCompleteQaReviewSheets.map(s => s.id);
+          break;
+        case 'RETURN_DISCARDED_TO_QA':
+          eligibleIds = selectedReturnToQaSheets.map(s => s.id);
+          break;
+        case 'RECEIVE_RETURNED_DISCARDED':
+          eligibleIds = selectedReceiveReturnedSheets.map(s => s.id);
+          break;
+        default:
+          eligibleIds = selectedSheetIds;
+      }
+
+      if (eligibleIds.length === 0) {
+        toast.error('None of the selected batch sheets are eligible for this action.');
+        return;
+      }
+      setSelectedSheetIds(eligibleIds);
     }
 
     setActiveOperation(op);
@@ -390,10 +480,18 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
   };
 
   return (
-    <div className="space-y-6" id="batch-custody-manager">
+    <div 
+      className={cn(
+        "transition-all duration-300",
+        isFullscreen 
+          ? "fixed inset-0 z-[100] bg-[#F8FAFC] p-3 sm:p-6 lg:p-8 overflow-y-auto space-y-6" 
+          : "w-full space-y-6"
+      )} 
+      id="batch-custody-manager"
+    >
       {/* Overview & Progress Card */}
-      <Card className="border-none shadow-sm rounded-3xl overflow-hidden bg-white">
-        <CardHeader className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-8">
+      <Card className={cn("border-none shadow-sm rounded-3xl overflow-hidden bg-white w-full", isFullscreen && "shadow-2xl border border-slate-200/80")}>
+        <CardHeader className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 sm:p-8">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div>
               <div className="flex items-center gap-3 mb-2">
@@ -403,6 +501,11 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                 <Badge className="bg-indigo-500/30 text-indigo-200 hover:bg-indigo-500/40 border-indigo-400/30 text-xs px-3 py-1 font-bold">
                   21 CFR Part 11 Custody Transfer & Review
                 </Badge>
+                {isFullscreen && (
+                  <Badge className="bg-amber-500/30 text-amber-200 border-amber-400/30 text-[11px] px-2.5 py-0.5 font-bold animate-pulse">
+                    Full Screen Mode
+                  </Badge>
+                )}
               </div>
               <CardTitle className="text-2xl font-bold tracking-tight text-white">
                 Batch Sheet Handover & Custody Manager
@@ -412,24 +515,51 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
               </CardDescription>
             </div>
 
-            {/* Quick Metrics */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white/5 p-4 rounded-2xl border border-white/10 backdrop-blur-md">
-              <div className="text-center px-3 border-r border-white/10 last:border-none">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Sheets</span>
-                <span className="text-xl font-black text-white">{totalCount}</span>
+            {/* Quick Metrics & Full Screen Action */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-white/5 p-4 rounded-2xl border border-white/10 backdrop-blur-md">
+                <div className="text-center px-3 border-r border-white/10 last:border-none">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Sheets</span>
+                  <span className="text-xl font-black text-white">{totalCount}</span>
+                </div>
+                <div className="text-center px-3 border-r border-white/10 last:border-none">
+                  <span className="text-[10px] uppercase font-bold text-amber-300 block">In Production</span>
+                  <span className="text-xl font-black text-amber-300">{inProductionCount}</span>
+                </div>
+                <div className="text-center px-3 border-r border-white/10 last:border-none">
+                  <span className="text-[10px] uppercase font-bold text-sky-300 block">Under QA Review</span>
+                  <span className="text-xl font-black text-sky-300">{underQaReviewCount}</span>
+                </div>
+                <div className="text-center px-3">
+                  <span className="text-[10px] uppercase font-bold text-emerald-400 block">Completed</span>
+                  <span className="text-xl font-black text-emerald-400">{completedCount}</span>
+                </div>
               </div>
-              <div className="text-center px-3 border-r border-white/10 last:border-none">
-                <span className="text-[10px] uppercase font-bold text-amber-300 block">In Production</span>
-                <span className="text-xl font-black text-amber-300">{inProductionCount}</span>
-              </div>
-              <div className="text-center px-3 border-r border-white/10 last:border-none">
-                <span className="text-[10px] uppercase font-bold text-sky-300 block">Under QA Review</span>
-                <span className="text-xl font-black text-sky-300">{underQaReviewCount}</span>
-              </div>
-              <div className="text-center px-3">
-                <span className="text-[10px] uppercase font-bold text-emerald-400 block">Completed</span>
-                <span className="text-xl font-black text-emerald-400">{completedCount}</span>
-              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsFullscreen(prev => !prev)}
+                className={cn(
+                  "h-12 px-4 rounded-2xl font-bold text-xs gap-2 transition-all shadow-md backdrop-blur-md border",
+                  isFullscreen
+                    ? "bg-amber-500 hover:bg-amber-600 text-slate-950 border-amber-400 font-extrabold"
+                    : "bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/40"
+                )}
+                title={isFullscreen ? "Exit Full Screen (Esc)" : "Expand Custody Manager to Full Screen"}
+              >
+                {isFullscreen ? (
+                  <>
+                    <Minimize2 className="w-4 h-4 text-slate-950" />
+                    <span>Exit Full Screen</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize2 className="w-4 h-4 text-indigo-300" />
+                    <span>Full Screen</span>
+                  </>
+                )}
+              </Button>
             </div>
           </div>
 
@@ -623,16 +753,16 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
             {canQAHandover && (
               <Button
                 onClick={() => handleOpenOperation('HANDOVER')}
-                disabled={selectedSheetIds.length === 0}
+                disabled={selectedHandoverSheets.length === 0}
                 className={cn(
                   "h-10 px-5 rounded-2xl font-bold text-xs gap-2 transition-all",
-                  selectedSheetIds.length > 0
-                    ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-100"
-                    : "bg-slate-100 text-slate-400 border border-slate-200"
+                  selectedHandoverSheets.length > 0
+                    ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-100 cursor-pointer"
+                    : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60"
                 )}
               >
                 <Send className="w-4 h-4" />
-                Handover Selected to Production ({selectedSheetIds.length})
+                Handover Selected to Production ({selectedHandoverSheets.length})
               </Button>
             )}
 
@@ -640,16 +770,16 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
             {canProductionReceive && (
               <Button
                 onClick={() => handleOpenOperation('PRODUCTION_RECEIVE')}
-                disabled={selectedSheetIds.length === 0}
+                disabled={selectedProductionReceiveSheets.length === 0}
                 className={cn(
                   "h-10 px-5 rounded-2xl font-bold text-xs gap-2 transition-all",
-                  selectedSheetIds.length > 0
-                    ? "bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-100"
-                    : "bg-slate-100 text-slate-400 border border-slate-200"
+                  selectedProductionReceiveSheets.length > 0
+                    ? "bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-100 cursor-pointer"
+                    : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60"
                 )}
               >
                 <UserCheck className="w-4 h-4" />
-                Accept Production Custody ({selectedSheetIds.length})
+                Accept Production Custody ({selectedProductionReceiveSheets.length})
               </Button>
             )}
 
@@ -657,16 +787,16 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
             {canSendForQaReview && (
               <Button
                 onClick={() => handleOpenOperation('SEND_QA_REVIEW')}
-                disabled={selectedSheetIds.length === 0}
+                disabled={selectedSendQaReviewSheets.length === 0}
                 className={cn(
                   "h-10 px-5 rounded-2xl font-bold text-xs gap-2 transition-all",
-                  selectedSheetIds.length > 0
-                    ? "bg-sky-600 hover:bg-sky-700 text-white shadow-md shadow-sky-100"
-                    : "bg-slate-100 text-slate-400 border border-slate-200"
+                  selectedSendQaReviewSheets.length > 0
+                    ? "bg-sky-600 hover:bg-sky-700 text-white shadow-md shadow-sky-100 cursor-pointer"
+                    : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60"
                 )}
               >
                 <ArrowRight className="w-4 h-4" />
-                Send Selected for QA Review ({selectedSheetIds.length})
+                Send Selected for QA Review ({selectedSendQaReviewSheets.length})
               </Button>
             )}
 
@@ -674,16 +804,16 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
             {canQaReceiveAndReview && (
               <Button
                 onClick={() => handleOpenOperation('QA_RECEIVE')}
-                disabled={selectedSheetIds.length === 0}
+                disabled={selectedQaReceiveSheets.length === 0}
                 className={cn(
                   "h-10 px-5 rounded-2xl font-bold text-xs gap-2 transition-all",
-                  selectedSheetIds.length > 0
-                    ? "bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-100"
-                    : "bg-slate-100 text-slate-400 border border-slate-200"
+                  selectedQaReceiveSheets.length > 0
+                    ? "bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-100 cursor-pointer"
+                    : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60"
                 )}
               >
                 <FileCheck2 className="w-4 h-4" />
-                Acknowledge QA Receipt ({selectedSheetIds.length})
+                Acknowledge QA Receipt ({selectedQaReceiveSheets.length})
               </Button>
             )}
 
@@ -691,16 +821,16 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
             {canQaReceiveAndReview && (
               <Button
                 onClick={() => handleOpenOperation('COMPLETE_QA_REVIEW')}
-                disabled={selectedSheetIds.length === 0}
+                disabled={selectedCompleteQaReviewSheets.length === 0}
                 className={cn(
                   "h-10 px-5 rounded-2xl font-bold text-xs gap-2 transition-all",
-                  selectedSheetIds.length > 0
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-100"
-                    : "bg-slate-100 text-slate-400 border border-slate-200"
+                  selectedCompleteQaReviewSheets.length > 0
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-100 cursor-pointer"
+                    : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60"
                 )}
               >
                 <CheckCircle2 className="w-4 h-4" />
-                Certify QA Review ({selectedSheetIds.length})
+                Certify QA Review ({selectedCompleteQaReviewSheets.length})
               </Button>
             )}
 
@@ -708,16 +838,16 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
             {canProductionReturnDiscarded && (discardedCount > 0 || sheets.some(isSheetEligibleForReturnToQa)) && (
               <Button
                 onClick={() => handleOpenOperation('RETURN_DISCARDED_TO_QA')}
-                disabled={!selectedSheetIds.some(id => sheets.find(s => s.id === id && isSheetEligibleForReturnToQa(s)))}
+                disabled={selectedReturnToQaSheets.length === 0}
                 className={cn(
                   "h-10 px-5 rounded-2xl font-bold text-xs gap-2 transition-all",
-                  selectedSheetIds.some(id => sheets.find(s => s.id === id && isSheetEligibleForReturnToQa(s)))
-                    ? "bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-100"
-                    : "bg-slate-100 text-slate-400 border border-slate-200"
+                  selectedReturnToQaSheets.length > 0
+                    ? "bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-100 cursor-pointer"
+                    : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60"
                 )}
               >
                 <RotateCcw className="w-4 h-4" />
-                RETURN BLANK BATCH SHEET BACK TO QA ({selectedSheetIds.filter(id => sheets.find(s => s.id === id && isSheetEligibleForReturnToQa(s))).length})
+                RETURN BLANK BATCH SHEET BACK TO QA ({selectedReturnToQaSheets.length})
               </Button>
             )}
 
@@ -725,16 +855,16 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
             {canQaReceiveDiscarded && (discardedCount > 0 || sheets.some(isSheetEligibleForQaReceiveReturned)) && (
               <Button
                 onClick={() => handleOpenOperation('RECEIVE_RETURNED_DISCARDED')}
-                disabled={!selectedSheetIds.some(id => sheets.find(s => s.id === id && isSheetEligibleForQaReceiveReturned(s)))}
+                disabled={selectedReceiveReturnedSheets.length === 0}
                 className={cn(
                   "h-10 px-5 rounded-2xl font-bold text-xs gap-2 transition-all",
-                  selectedSheetIds.some(id => sheets.find(s => s.id === id && isSheetEligibleForQaReceiveReturned(s)))
-                    ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-100"
-                    : "bg-slate-100 text-slate-400 border border-slate-200"
+                  selectedReceiveReturnedSheets.length > 0
+                    ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-100 cursor-pointer"
+                    : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60"
                 )}
               >
                 <FileCheck2 className="w-4 h-4" />
-                RECEIVE RETURNED BATCH SHEET ({selectedSheetIds.filter(id => sheets.find(s => s.id === id && isSheetEligibleForQaReceiveReturned(s))).length})
+                RECEIVE RETURNED BATCH SHEET ({selectedReceiveReturnedSheets.length})
               </Button>
             )}
           </div>
@@ -746,7 +876,22 @@ export const BatchSheetCustodyManager: React.FC<BatchSheetCustodyManagerProps> =
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
                     <th className="py-3.5 px-4 w-12 text-center">
-                      <span className="sr-only">Select</span>
+                      <button
+                        type="button"
+                        onClick={handleToggleSelectAllFiltered}
+                        className="focus:outline-none"
+                        title={isAllFilteredSelected ? "Deselect all sheets" : "Select all filtered sheets"}
+                      >
+                        {isAllFilteredSelected ? (
+                          <CheckSquare className="w-4 h-4 text-indigo-600" />
+                        ) : isSomeFilteredSelected ? (
+                          <div className="w-4 h-4 rounded border border-indigo-500 bg-indigo-50 flex items-center justify-center">
+                            <div className="w-2 h-0.5 bg-indigo-600 rounded-sm" />
+                          </div>
+                        ) : (
+                          <Square className="w-4 h-4 text-slate-300 hover:text-slate-400" />
+                        )}
+                      </button>
                     </th>
                     <th className="py-3.5 px-4">Sheet Batch Number</th>
                     <th className="py-3.5 px-4">Print Status</th>

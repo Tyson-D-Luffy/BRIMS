@@ -29,7 +29,12 @@ import {
   Sparkles,
   HelpCircle,
   BarChart3,
-  TrendingUp
+  TrendingUp,
+  Play,
+  Pause,
+  Terminal,
+  Database,
+  ArrowUpRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -56,7 +61,11 @@ import {
   UserBehaviorAnomaly, 
   ExplainableAIOutput,
   ComplianceSeverity,
-  ComplianceDomain
+  ComplianceDomain,
+  InterceptorStreamData,
+  InterceptorLogEntry,
+  LearningBaseData,
+  LearningEngineEntry
 } from '../types/complianceGuardian';
 import { toast } from 'sonner';
 
@@ -108,6 +117,19 @@ export default function ComplianceGuardian() {
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
 
+  // Live Interceptor Stream State
+  const [interceptorData, setInterceptorData] = useState<InterceptorStreamData | null>(null);
+  const [isStreamLive, setIsStreamLive] = useState(true);
+  const [streamFilter, setStreamFilter] = useState<'ALL' | 'PASS' | 'FLAGGED'>('ALL');
+  const [streamSearch, setStreamSearch] = useState('');
+  const [refreshingStream, setRefreshingStream] = useState(false);
+
+  // Human-in-the-Loop AI Learning Base State
+  const [learningBaseData, setLearningBaseData] = useState<LearningBaseData | null>(null);
+  const [learningSearch, setLearningSearch] = useState('');
+  const [learningDecisionFilter, setLearningDecisionFilter] = useState<'ALL' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [refreshingLearning, setRefreshingLearning] = useState(false);
+
   // Inspection Report State
   const [inspectionReport, setInspectionReport] = useState<any>(null);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -121,6 +143,12 @@ export default function ComplianceGuardian() {
         setFindings(res.data.data.findings);
         setAnomalies(res.data.data.anomalies);
         setReadiness(res.data.data.readiness);
+        if (res.data.data.interceptorStream) {
+          setInterceptorData(res.data.data.interceptorStream);
+        }
+        if (res.data.data.learningBase) {
+          setLearningBaseData(res.data.data.learningBase);
+        }
       }
     } catch (err: any) {
       console.error("Failed to load compliance scan:", err);
@@ -131,9 +159,57 @@ export default function ComplianceGuardian() {
     }
   };
 
+  const fetchInterceptorStream = async (silent = false) => {
+    try {
+      if (!silent) setRefreshingStream(true);
+      const res = await api.get(`/compliance/interceptor-stream?branch=${encodeURIComponent(selectedBranch || 'Masulkhana')}&limit=40`);
+      if (res.data?.success) {
+        setInterceptorData(res.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch interceptor stream:", err);
+    } finally {
+      if (!silent) setRefreshingStream(false);
+    }
+  };
+
+  const fetchLearningBase = async (silent = false) => {
+    try {
+      if (!silent) setRefreshingLearning(true);
+      const res = await api.get(`/compliance/learning-base?branch=${encodeURIComponent(selectedBranch || 'Masulkhana')}`);
+      if (res.data?.success) {
+        setLearningBaseData(res.data.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch learning base:", err);
+    } finally {
+      if (!silent) setRefreshingLearning(false);
+    }
+  };
+
   useEffect(() => {
     fetchScanData();
   }, [selectedBranch]);
+
+  useEffect(() => {
+    if (activeTab !== 'interceptor' || !isStreamLive) return;
+
+    if (!interceptorData) {
+      fetchInterceptorStream(true);
+    }
+
+    const intervalId = setInterval(() => {
+      fetchInterceptorStream(true);
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [activeTab, isStreamLive, selectedBranch]);
+
+  useEffect(() => {
+    if (activeTab === 'learning' && !learningBaseData) {
+      fetchLearningBase();
+    }
+  }, [activeTab]);
 
   const handleExplainFinding = async (finding: ComplianceFinding) => {
     setSelectedFinding(finding);
@@ -162,6 +238,8 @@ export default function ComplianceGuardian() {
       setSubmittingFeedback(true);
       const res = await api.post('/compliance/feedback', {
         findingId: selectedFinding.id,
+        findingTitle: selectedFinding.title,
+        domain: selectedFinding.domain,
         userDecision,
         actualRootCause,
         capaId,
@@ -174,6 +252,7 @@ export default function ComplianceGuardian() {
         toast.success(`Feedback recorded! AI Knowledge Base updated (${userDecision}).`);
         setSelectedFinding(null);
         fetchScanData();
+        fetchLearningBase(true);
       }
     } catch (err: any) {
       toast.error(err.response?.data?.message || "Failed to submit feedback.");
@@ -445,8 +524,8 @@ export default function ComplianceGuardian() {
                   Multi-Branch Plant Compliance Comparison
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {scorecard?.branchComparison.map(b => (
-                    <div key={b.branchName} className="p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
+                  {scorecard?.branchComparison.map((b, bIdx) => (
+                    <div key={`${b.branchName || 'branch'}-${bIdx}`} className="p-5 rounded-xl border border-slate-200 bg-slate-50 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-black text-slate-900">{b.branchName}</span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
@@ -519,11 +598,11 @@ export default function ComplianceGuardian() {
                     <p className="text-xs text-slate-500">All scanned parameters meet 21 CFR Part 11, GAMP 5, and ALCOA+ rules.</p>
                   </div>
                 ) : (
-                  filteredFindings.map(finding => {
+                  filteredFindings.map((finding, fIdx) => {
                     const isCritical = finding.severity === 'CRITICAL';
                     return (
                       <div 
-                        key={finding.id}
+                        key={`${finding.id || 'finding'}-${fIdx}`}
                         className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs hover:border-slate-300 transition-all space-y-4"
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -616,8 +695,8 @@ export default function ComplianceGuardian() {
                 </h3>
 
                 <div className="space-y-3">
-                  {readiness?.checklists.map(item => (
-                    <div key={item.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-4">
+                  {readiness?.checklists.map((item, itemIdx) => (
+                    <div key={`${item.id || 'chk'}-${itemIdx}`} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3">
                         {item.passed ? (
                           <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -664,8 +743,8 @@ export default function ComplianceGuardian() {
                   <div className="space-y-3">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Regulatory Compliance Matrix</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {inspectionReport.complianceStandardMatrix?.map((m: any) => (
-                        <div key={m.standard} className="p-3 rounded-lg bg-white/5 border border-white/10 flex justify-between text-xs">
+                      {inspectionReport.complianceStandardMatrix?.map((m: any, mIdx: number) => (
+                        <div key={`${m.standard || 'std'}-${mIdx}`} className="p-3 rounded-lg bg-white/5 border border-white/10 flex justify-between text-xs">
                           <span className="font-semibold text-slate-200">{m.standard}</span>
                           <span className="font-bold text-[#FF6321]">{m.score} ({m.status})</span>
                         </div>
@@ -700,8 +779,8 @@ export default function ComplianceGuardian() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {anomalies.map(userItem => (
-                      <tr key={userItem.userId} className="hover:bg-slate-50/80 transition-colors">
+                    {anomalies.map((userItem, userIdx) => (
+                      <tr key={`${userItem.userId || userItem.userEmail || 'user'}-${userIdx}`} className="hover:bg-slate-50/80 transition-colors">
                         <td className="p-4 font-bold text-slate-900">
                           {userItem.userName}
                           <span className="block text-[10px] text-slate-400 font-normal">{userItem.userEmail}</span>
@@ -729,7 +808,7 @@ export default function ComplianceGuardian() {
                         <td className="p-4 text-slate-600 max-w-xs">
                           <ul className="list-disc list-inside space-y-0.5 text-[11px]">
                             {userItem.flags.map((flag, idx) => (
-                              <li key={idx}>{flag}</li>
+                              <li key={`flag-${userIdx}-${idx}`}>{flag}</li>
                             ))}
                           </ul>
                         </td>
@@ -746,34 +825,221 @@ export default function ComplianceGuardian() {
 
           {/* TAB 5: AI LEARNING ENGINE */}
           {activeTab === 'learning' && (
-            <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-blue-500" />
-                    Human-in-the-Loop AI Retraining & Knowledge Base
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Prompt Version: v2.4.0-PROD • Knowledge Base: GMP-2026-Q3-ANNEX11-21CFR11</p>
+            <div className="space-y-6">
+              {/* Learning Base Metrics Header */}
+              <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-xs space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <BookOpen className="w-4 h-4" />
+                      </div>
+                      <h3 className="text-base font-black text-slate-900 tracking-tight">
+                        Human-in-the-Loop AI Retraining & Knowledge Base Ledger
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Audited Continuous Feedback Loop • Knowledge Base: <span className="font-semibold text-slate-700">{learningBaseData?.metrics?.knowledgeBaseVersion || 'GMP-2026-Q3-ANNEX11-21CFR11'}</span> • Engine Prompt: <span className="font-semibold text-slate-700">{learningBaseData?.metrics?.promptVersion || 'v2.4.0-PROD'}</span>
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => fetchLearningBase(false)}
+                    disabled={refreshingLearning}
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-2 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${refreshingLearning ? 'animate-spin text-blue-600' : ''}`} />
+                    {refreshingLearning ? 'Refreshing...' : 'Refresh Knowledge Base'}
+                  </button>
+                </div>
+
+                {/* Real-Time Metrics from Firestore Collection */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">AI Accuracy Rating</span>
+                    <div className="text-2xl font-black text-slate-900">
+                      {learningBaseData?.metrics ? `${learningBaseData.metrics.accuracyRate}%` : '100%'}
+                    </div>
+                    <div className="flex items-center gap-1 text-amber-500 text-xs font-bold pt-0.5">
+                      ★ {learningBaseData?.metrics?.averageRating ?? 5.0} / 5.0 Rating
+                    </div>
+                  </div>
+
+                  <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Auditor Reviews</span>
+                    <div className="text-2xl font-black text-slate-900">
+                      {learningBaseData?.metrics?.totalReviews ?? 0}
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">Recorded in compliance_learning_base</p>
+                  </div>
+
+                  <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Approved CAPA Retrain Rules</span>
+                    <div className="text-2xl font-black text-emerald-600">
+                      {learningBaseData?.metrics?.approvedCapaCount ?? 0}
+                    </div>
+                    <p className="text-[11px] text-emerald-700 font-medium">Incorporated into rule weights</p>
+                  </div>
+
+                  <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">False Positive Flags</span>
+                    <div className="text-2xl font-black text-rose-600">
+                      {learningBaseData?.metrics ? `${learningBaseData.metrics.falsePositiveRate}%` : '0%'}
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">Filtered by human feedback loop</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                  <span className="text-xs font-bold text-slate-500 uppercase">AI Recommendation Accuracy</span>
-                  <div className="text-3xl font-black text-slate-900">98.4%</div>
-                  <p className="text-[11px] text-emerald-600 font-semibold">Based on 140 QA auditor reviews</p>
+              {/* Audited Retraining Ledger Table */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                      <Database className="w-4 h-4 text-slate-600" />
+                      Audited Human Feedback & Continuous Model Learning Log
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Verified audit trail of QA approvals, CAPAs, and model parameter retraining.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center bg-slate-100 p-1 rounded-xl gap-1">
+                      {(['ALL', 'APPROVED', 'REJECTED'] as const).map(filter => (
+                        <button
+                          key={filter}
+                          onClick={() => setLearningDecisionFilter(filter)}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                            learningDecisionFilter === filter
+                              ? 'bg-white text-slate-900 shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {filter === 'ALL' ? 'All Reviews' : filter === 'APPROVED' ? 'Approved (Retrained)' : 'False Positives'}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        placeholder="Search rules, CAPAs, root causes..."
+                        value={learningSearch}
+                        onChange={(e) => setLearningSearch(e.target.value)}
+                        className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 w-52"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                  <span className="text-xs font-bold text-slate-500 uppercase">Approved CAPA Retrain Rules</span>
-                  <div className="text-3xl font-black text-slate-900">42</div>
-                  <p className="text-[11px] text-slate-500 font-semibold">Incorporated into rule weights</p>
-                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        <th className="p-4">Finding / Rule Title</th>
+                        <th className="p-4">Domain</th>
+                        <th className="p-4">QA Decision</th>
+                        <th className="p-4">Auditor / Reviewer</th>
+                        <th className="p-4">CAPA / Root Cause</th>
+                        <th className="p-4">Accuracy Rating</th>
+                        <th className="p-4">Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(() => {
+                        const entries = learningBaseData?.entries || [];
+                        const filtered = entries.filter(item => {
+                          if (learningDecisionFilter !== 'ALL' && item.userDecision !== learningDecisionFilter) {
+                            return false;
+                          }
+                          if (learningSearch) {
+                            const q = learningSearch.toLowerCase();
+                            const matchTitle = item.findingTitle?.toLowerCase().includes(q);
+                            const matchId = item.findingId?.toLowerCase().includes(q);
+                            const matchCapa = item.capaId?.toLowerCase().includes(q);
+                            const matchCause = item.actualRootCause?.toLowerCase().includes(q);
+                            const matchUser = item.reviewedBy?.toLowerCase().includes(q) || item.reviewedByEmail?.toLowerCase().includes(q);
+                            return matchTitle || matchId || matchCapa || matchCause || matchUser;
+                          }
+                          return true;
+                        });
 
-                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                  <span className="text-xs font-bold text-slate-500 uppercase">False Positive Flags</span>
-                  <div className="text-3xl font-black text-slate-900">1.6%</div>
-                  <p className="text-[11px] text-slate-500 font-semibold">Filtered by human feedback loop</p>
+                        if (filtered.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={7} className="p-8 text-center text-slate-500">
+                                <div className="max-w-md mx-auto space-y-2">
+                                  <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
+                                  <p className="font-semibold text-slate-700">No Retraining Feedback Records Found</p>
+                                  <p className="text-[11px] text-slate-400">
+                                    When QA auditors review findings in the "Real-Time Findings" tab and submit decisions or CAPAs via "Explain & Deep Dive", their feedback is logged here to continuously tune heuristic accuracy.
+                                  </p>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filtered.map((entry, idx) => (
+                          <tr key={entry.id || `learning-${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="p-4 font-bold text-slate-900">
+                              {entry.findingTitle || entry.findingId}
+                              <span className="block text-[10px] text-slate-400 font-mono font-normal mt-0.5">ID: {entry.findingId}</span>
+                            </td>
+                            <td className="p-4">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                                {entry.domain || '21 CFR Part 11'}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
+                                entry.userDecision === 'APPROVED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}>
+                                {entry.userDecision === 'APPROVED' ? 'APPROVED (RETRAINED)' : 'REJECTED (FALSE POSITIVE)'}
+                              </span>
+                            </td>
+                            <td className="p-4 text-slate-700">
+                              <div className="font-semibold">{entry.reviewedBy || 'QA Auditor'}</div>
+                              <div className="text-[10px] text-slate-400">{entry.reviewedByEmail}</div>
+                            </td>
+                            <td className="p-4 text-slate-600 max-w-xs">
+                              {entry.capaId ? (
+                                <div className="space-y-0.5">
+                                  <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 text-[10px] font-bold font-mono border border-amber-200">
+                                    {entry.capaId}
+                                  </span>
+                                  {entry.actualRootCause && (
+                                    <p className="text-[11px] text-slate-600 line-clamp-2 mt-0.5">{entry.actualRootCause}</p>
+                                  )}
+                                </div>
+                              ) : entry.actualRootCause ? (
+                                <p className="text-[11px] text-slate-600">{entry.actualRootCause}</p>
+                              ) : (
+                                <span className="text-slate-400 italic">No CAPA assigned</span>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              <div className="flex items-center text-amber-400 text-xs">
+                                {[1, 2, 3, 4, 5].map(s => (
+                                  <span key={s} className={s <= (entry.accuracyRating || 5) ? 'text-amber-400' : 'text-slate-200'}>
+                                    ★
+                                  </span>
+                                ))}
+                                <span className="ml-1 text-[11px] font-bold text-slate-600">({entry.accuracyRating || 5})</span>
+                              </div>
+                            </td>
+                            <td className="p-4 text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                              {entry.reviewedAt ? new Date(entry.reviewedAt).toLocaleString() : 'Just now'}
+                            </td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -781,39 +1047,180 @@ export default function ComplianceGuardian() {
 
           {/* TAB 6: LIVE INTERCEPTOR LOG STREAM */}
           {activeTab === 'interceptor' && (
-            <div className="bg-slate-900 text-white p-6 sm:p-8 rounded-2xl border border-slate-800 shadow-2xl font-mono text-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                  <span className="font-bold tracking-wider uppercase text-emerald-400">Live AI Interceptor Transaction Log Stream</span>
+            <div className="bg-slate-950 text-white p-6 sm:p-8 rounded-2xl border border-slate-800 shadow-2xl font-mono text-xs space-y-6">
+              {/* Interceptor Top Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <span className={`w-3 h-3 rounded-full ${isStreamLive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                    <h3 className="text-sm font-bold tracking-wider uppercase text-emerald-400 flex items-center gap-2">
+                      <Terminal className="w-4 h-4" />
+                      Live AI Interceptor Transaction Log Stream
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-slate-300">
+                      {isStreamLive ? 'LIVE STREAMING (5s POLLING)' : 'STREAM PAUSED'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-sans mt-1">
+                    21 CFR Part 11 real-time heuristic interceptor streaming live batch transactions, custody operations, electronic signatures, and audit logs.
+                  </p>
                 </div>
-                <span className="text-[10px] text-slate-400">Target Latency: &lt; 2.0s</span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsStreamLive(!isStreamLive)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                      isStreamLive
+                        ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30'
+                    }`}
+                  >
+                    {isStreamLive ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                    {isStreamLive ? 'Pause Stream' : 'Resume Live'}
+                  </button>
+
+                  <button
+                    onClick={() => fetchInterceptorStream(false)}
+                    disabled={refreshingStream}
+                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${refreshingStream ? 'animate-spin text-emerald-400' : ''}`} />
+                    Refresh
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-                {[
-                  { time: new Date().toLocaleTimeString(), event: 'USER_LOGIN_SUCCESS', user: user?.email, latency: '0.14s', eval: 'PASS' },
-                  { time: new Date(Date.now() - 15000).toLocaleTimeString(), event: 'BATCH_STEP_SIGNATURE_EXEC', user: 'op_clean@pharma.com', latency: '0.22s', eval: 'PASS' },
-                  { time: new Date(Date.now() - 45000).toLocaleTimeString(), event: 'PRODUCT_MASTER_REVISION_SUBMIT', user: 'qa_lead@pharma.com', latency: '0.38s', eval: 'PASS' },
-                  { time: new Date(Date.now() - 120000).toLocaleTimeString(), event: 'BATCH_NUMBER_ALLOCATION', user: 'system', latency: '0.08s', eval: 'FLAGGED_FORMAT_WARN' },
-                ].map((log, i) => (
-                  <div key={i} className="p-2.5 rounded bg-white/5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <span className="text-slate-400">[{log.time}]</span>
-                      <span className="font-bold text-slate-200">{log.event}</span>
-                      <span className="text-slate-400">({log.user})</span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <span className="text-slate-500">Eval time: {log.latency}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        log.eval === 'PASS' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                      }`}>
-                        {log.eval}
-                      </span>
-                    </div>
+              {/* Interceptor Metrics Strip */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Intercepted</span>
+                  <div className="text-xl font-bold text-white mt-0.5">
+                    {interceptorData?.summary?.totalIntercepted ?? 0} <span className="text-[10px] text-slate-500 font-normal">events</span>
                   </div>
-                ))}
+                </div>
+                <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Pass Rate</span>
+                  <div className="text-xl font-bold text-emerald-400 mt-0.5">
+                    {interceptorData?.summary?.passRate ?? 100}%
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Evaluator Latency</span>
+                  <div className="text-xl font-bold text-cyan-400 mt-0.5">
+                    {interceptorData?.summary?.avgLatency || '0.18s'}
+                  </div>
+                </div>
+                <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Flagged Deviations</span>
+                  <div className={`text-xl font-bold mt-0.5 ${(interceptorData?.summary?.flaggedCount || 0) > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                    {interceptorData?.summary?.flaggedCount ?? 0}
+                  </div>
+                </div>
+              </div>
+
+              {/* Filter & Search Bar */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  {(['ALL', 'PASS', 'FLAGGED'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => setStreamFilter(mode)}
+                      className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-colors ${
+                        streamFilter === mode ? 'bg-white/20 text-white' : 'text-slate-400 hover:text-white bg-white/5'
+                      }`}
+                    >
+                      {mode === 'ALL' ? 'All Transactions' : mode === 'PASS' ? 'Pass Only' : 'Flagged Only'}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Filter events, users, modules..."
+                    value={streamSearch}
+                    onChange={(e) => setStreamSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+              </div>
+
+              {/* Real-time Stream Log List */}
+              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                {(() => {
+                  const rawLogs = interceptorData?.logs || [];
+                  const filteredLogs = rawLogs.filter(log => {
+                    if (streamFilter === 'PASS' && log.eval !== 'PASS') return false;
+                    if (streamFilter === 'FLAGGED' && log.eval === 'PASS') return false;
+                    if (streamSearch) {
+                      const q = streamSearch.toLowerCase();
+                      const matchEvent = log.event?.toLowerCase().includes(q);
+                      const matchUser = log.user?.toLowerCase().includes(q) || log.userEmail?.toLowerCase().includes(q);
+                      const matchMod = log.module?.toLowerCase().includes(q);
+                      const matchDetails = log.details?.toLowerCase().includes(q);
+                      return matchEvent || matchUser || matchMod || matchDetails;
+                    }
+                    return true;
+                  });
+
+                  if (filteredLogs.length === 0) {
+                    return (
+                      <div className="p-8 text-center text-slate-500 bg-white/5 rounded-xl border border-white/5">
+                        <Terminal className="w-6 h-6 text-slate-600 mx-auto mb-2" />
+                        <p className="font-semibold text-slate-400">No Transactions Found</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {streamSearch ? 'No events matching your search criteria.' : 'Transactions will appear here in real time as actions are performed in the application.'}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return filteredLogs.map((log) => (
+                    <div 
+                      key={log.id} 
+                      className={`p-3 rounded-xl border transition-all ${
+                        log.eval === 'PASS' 
+                          ? 'bg-white/5 border-white/10 hover:border-white/20' 
+                          : 'bg-amber-500/10 border-amber-500/30 hover:border-amber-500/40'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <span className="text-slate-400 font-mono text-[11px]">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-white/10 text-slate-300">
+                            {log.module}
+                          </span>
+                          <span className="font-bold text-slate-200">{log.event}</span>
+                          <span className="text-slate-400 text-[11px]">
+                            ({log.user || log.userEmail})
+                          </span>
+                          {log.branch && (
+                            <span className="text-[10px] text-slate-500">[{log.branch}]</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 self-end sm:self-auto">
+                          <span className="text-slate-500 text-[11px]">Eval: {log.latency}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wide ${
+                            log.eval === 'PASS' 
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
+                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                          }`}>
+                            {log.eval}
+                          </span>
+                        </div>
+                      </div>
+
+                      {log.details && (
+                        <div className="mt-1.5 pt-1.5 border-t border-white/5 text-[11px] text-slate-400 flex items-center gap-2">
+                          <span className="text-slate-500 font-semibold">Details:</span>
+                          <span className="truncate">{log.details}</span>
+                        </div>
+                      )}
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           )}

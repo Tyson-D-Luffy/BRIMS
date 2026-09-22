@@ -54,20 +54,37 @@ try {
 // (firebase-client.ts) with anonymous auth for Firestore access.
 
 let isAdminHealthy = true;
-export const checkAdminHealth = async () => {
-  if (!isAdminHealthy) return false;
-  try {
-    // Quick probe
-    await db.collection("_health").doc("probe").get();
-    return true;
-  } catch (err: any) {
-    if (err.code === 7 || err.message?.includes("PERMISSION_DENIED")) {
-      isAdminHealthy = false;
-      console.log("Firebase Admin: Permission Denied. Switching all services to Client SDK mode.");
-      return false;
-    }
-    return true;
+let probePromise: Promise<boolean> | null = null;
+
+export const markAdminUnhealthy = () => {
+  if (isAdminHealthy) {
+    isAdminHealthy = false;
+    console.log("Firebase Admin: Permission Denied. Switching all services to Client SDK mode.");
   }
+};
+
+export const checkAdminHealth = async (): Promise<boolean> => {
+  if (!isAdminHealthy) return false;
+  if (probePromise) return probePromise;
+
+  probePromise = (async () => {
+    try {
+      // Quick probe
+      await db.collection("_health").doc("probe").get();
+      return true;
+    } catch (err: any) {
+      if (err.code === 7 || err.message?.includes("PERMISSION_DENIED") || err.message?.includes("insufficient permissions")) {
+        isAdminHealthy = false;
+        console.log("Firebase Admin: Permission Denied. Switching all services to Client SDK mode.");
+        return false;
+      }
+      return true;
+    } finally {
+      probePromise = null;
+    }
+  })();
+
+  return probePromise;
 };
 
 import { getStorage } from "firebase-admin/storage";

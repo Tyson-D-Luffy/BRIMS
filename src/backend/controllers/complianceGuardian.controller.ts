@@ -53,7 +53,7 @@ export class ComplianceGuardianController {
    */
   static async submitFeedback(req: AuthRequest, res: Response) {
     try {
-      const { findingId, userDecision, actualRootCause, capaId, capaActionPlan, accuracyRating, notes } = req.body;
+      const { findingId, findingTitle, domain, userDecision, actualRootCause, capaId, capaActionPlan, accuracyRating, notes } = req.body;
       const user = (req as any).user;
 
       if (!findingId || !userDecision) {
@@ -64,7 +64,7 @@ export class ComplianceGuardianController {
         findingId,
         user,
         userDecision,
-        { actualRootCause, capaId, capaActionPlan, accuracyRating, notes }
+        { findingTitle, domain, actualRootCause, capaId, capaActionPlan, accuracyRating, notes }
       );
 
       return res.json({
@@ -77,6 +77,49 @@ export class ComplianceGuardianController {
       return res.status(500).json({
         success: false,
         message: error.message || "Failed to record human feedback."
+      });
+    }
+  }
+
+  /**
+   * GET /api/compliance/interceptor-stream?branch=Masulkhana
+   */
+  static async getInterceptorStream(req: AuthRequest, res: Response) {
+    try {
+      const branchName = (req.query.branch as string) || (req as any).selectedBranch || "Masulkhana";
+      const limitCount = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+      const data = await ComplianceGuardianService.getLiveInterceptorStream(branchName, limitCount);
+
+      return res.json({
+        success: true,
+        data
+      });
+    } catch (error: any) {
+      console.error("[COMPLIANCE_CONTROLLER] Error fetching interceptor stream:", error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Failed to fetch live interceptor stream."
+      });
+    }
+  }
+
+  /**
+   * GET /api/compliance/learning-base?branch=Masulkhana
+   */
+  static async getLearningBase(req: AuthRequest, res: Response) {
+    try {
+      const branchName = (req.query.branch as string) || (req as any).selectedBranch || "Masulkhana";
+      const data = await ComplianceGuardianService.getLearningBase(branchName);
+
+      return res.json({
+        success: true,
+        data
+      });
+    } catch (error: any) {
+      console.error("[COMPLIANCE_CONTROLLER] Error fetching learning base:", error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Failed to fetch AI learning base."
       });
     }
   }
