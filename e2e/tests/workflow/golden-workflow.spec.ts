@@ -40,7 +40,10 @@ test.describe('@workflow BRIMS controlled golden workflow', () => {
   });
 
   test.fixme(
-    true,
-    'Next increment: map stable data-testid hooks for create → review → approve → issue → print → handover → production receipt → QA completion.'
+    'complete create-to-archive workflow',
+    async () => {
+      // Next increment: map stable data-testid hooks for create → review → approve
+      // → issue → print → handover → production receipt → QA completion.
+    }
   );
 });
