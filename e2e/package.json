@@ -1,0 +1,17 @@
+{
+  "name": "brims-workflow-agents",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:workflow": "playwright test --grep @workflow",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.14.0",
+    "typescript": "~5.8.2"
+  }
+}
