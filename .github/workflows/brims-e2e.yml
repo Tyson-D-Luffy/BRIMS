@@ -58,3 +58,4 @@ jobs:
         run: npm run test:workflow
 
 # Repository secrets are intentionally available only on the approved test branch.
+# Fresh run after repository-secret confirmation.
