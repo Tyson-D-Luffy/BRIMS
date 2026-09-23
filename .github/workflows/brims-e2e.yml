@@ -1,6 +1,11 @@
 name: BRIMS AI Studio E2E
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'e2e/**'
+      - '.github/workflows/brims-e2e.yml'
   workflow_dispatch:
     inputs:
       run_mutating_workflow:
@@ -34,9 +39,9 @@ jobs:
       BRIMS_PRODUCTION_PASSWORD: ${{ secrets.BRIMS_PRODUCTION_PASSWORD }}
       BRIMS_AUDIT_EMPLOYEE_ID: ${{ secrets.BRIMS_AUDIT_EMPLOYEE_ID }}
       BRIMS_AUDIT_PASSWORD: ${{ secrets.BRIMS_AUDIT_PASSWORD }}
-      BRIMS_UNAUTHORIZED_EMPLOYEE_ID: ${{ secrets.BRIMS_UNAUTHORIZED_EMPLOYEE_ID }}
-      BRIMS_UNAUTHORIZED_PASSWORD: ${{ secrets.BRIMS_UNAUTHORIZED_PASSWORD }}
-      RUN_BRIMS_MUTATING_E2E: ${{ inputs.run_mutating_workflow }}
+      BRIMS_IT_ADMIN_EMPLOYEE_ID: ${{ secrets.BRIMS_IT_ADMIN_EMPLOYEE_ID }}
+      BRIMS_IT_ADMIN_PASSWORD: ${{ secrets.BRIMS_IT_ADMIN_PASSWORD }}
+      RUN_BRIMS_MUTATING_E2E: ${{ inputs.run_mutating_workflow || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -48,5 +53,5 @@ jobs:
       - name: Run read-only role smoke tests
         run: npm run test:smoke
       - name: Run approved mutating workflow
-        if: ${{ inputs.run_mutating_workflow }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_mutating_workflow }}
         run: npm run test:workflow
