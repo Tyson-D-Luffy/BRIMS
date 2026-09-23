@@ -12,7 +12,17 @@ export class BrimsAgent {
 
     await test.step(`${this.role}: sign in with Employee ID`, async () => {
       await this.page.goto('/login');
-      await expect(this.page.getByRole('heading', { name: 'BRIMS Portal' })).toBeVisible();
+
+      const loginHeading = this.page.getByRole('heading', { name: 'BRIMS Portal' });
+      if (!await loginHeading.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        const landedUrl = this.page.url();
+        const title = await this.page.title().catch(() => '');
+        const bodyText = await this.page.locator('body').innerText({ timeout: 2_000 }).catch(() => '');
+        const summary = bodyText.replace(/\s+/g, ' ').trim().slice(0, 300);
+        throw new Error(
+          `BRIMS login surface unavailable. Landed on ${landedUrl}; title="${title}"; page="${summary}"`
+        );
+      }
 
       await this.page.locator('#employeeId').fill(credentials.employeeId);
       await this.page.locator('#password').fill(credentials.password);
