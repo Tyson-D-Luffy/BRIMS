@@ -18,9 +18,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: brims-e2e-test-playwright-workflow-agents
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: e2e
@@ -58,4 +63,3 @@ jobs:
         run: npm run test:workflow
 
 # Repository secrets are intentionally available only on the approved test branch.
-# Fresh run after repository-secret confirmation.
