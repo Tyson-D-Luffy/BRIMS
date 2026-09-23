@@ -28,45 +28,30 @@ export class BrimsAgent {
     });
   }
 
-  async logout(): Promise<void> {
-    await test.step(`${this.role}: sign out`, async () => {
-      const profileOrUserMenu = this.page.getByRole('button', { name: /profile|account|user menu/i }).first();
-      if (await profileOrUserMenu.isVisible().catch(() => false)) {
-        await profileOrUserMenu.click();
-      }
-
-      const logout = this.page.getByRole('button', { name: /log ?out|sign ?out/i }).or(
-        this.page.getByRole('link', { name: /log ?out|sign ?out/i })
-      ).first();
-
-      if (await logout.isVisible().catch(() => false)) {
-        await logout.click();
-        await expect(this.page).toHaveURL(/\/login/);
-      } else {
-        // A fresh browser context is the isolation boundary when the current UI has no accessible logout control.
-        await this.page.context().clearCookies();
-      }
-    });
+  async navigateInApp(path: string): Promise<void> {
+    await this.page.evaluate((targetPath) => {
+      const navigate = (window as typeof window & { __appNavigate?: (value: string) => void }).__appNavigate;
+      if (!navigate) throw new Error('BRIMS in-app navigator is unavailable');
+      navigate(targetPath);
+    }, path);
+    await expect.poll(() => new URL(this.page.url()).pathname).toBe(path);
   }
 
   async verifyRoute(path: string, expectedText: RegExp): Promise<void> {
     await test.step(`${this.role}: verify ${path}`, async () => {
-      await this.page.goto(path);
-      await expect(this.page).not.toHaveURL(/\/login/);
+      await this.navigateInApp(path);
       await expect(this.page.locator('body')).toContainText(expectedText);
     });
   }
 
   async verifyForbiddenRoute(path: string): Promise<void> {
     await test.step(`${this.role}: cannot use ${path}`, async () => {
-      await this.page.goto(path);
-      const body = this.page.locator('body');
-      const forbiddenMessage = body.getByText(/unauthorized|forbidden|access denied|permission/i).first();
-      const redirectedHome = this.page.url().replace(/\/$/, '') === new URL('/', this.page.url()).toString().replace(/\/$/, '');
-      const redirectedLogin = /\/login(?:\?|$)/.test(this.page.url());
+      await this.navigateInApp(path);
+      const forbiddenMessage = this.page.getByText(/unauthorized|forbidden|access denied|permission/i).first();
+      const redirectedHome = new URL(this.page.url()).pathname === '/';
 
       expect(
-        redirectedHome || redirectedLogin || await forbiddenMessage.isVisible().catch(() => false),
+        redirectedHome || await forbiddenMessage.isVisible().catch(() => false),
         `Expected ${path} to be denied or redirected for ${this.role}`
       ).toBeTruthy();
     });
