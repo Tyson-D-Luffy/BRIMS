@@ -1,0 +1,61 @@
+name: Deploy BRIMS E2E to Cloud Run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brims-e2e-cloud-run-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: brims-e2e-cloud-run
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - name: Check out approved test branch
+        uses: actions/checkout@v4
+        with:
+          ref: test/playwright-workflow-agents
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Deploy BRIMS source to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service: brims-e2e-dev
+          region: asia-southeast1
+          source: .
+          flags: >-
+            --allow-unauthenticated
+            --port=3000
+            --memory=1Gi
+            --cpu=1
+            --min-instances=0
+            --max-instances=2
+            --timeout=300
+          env_vars_update_strategy: overwrite
+          env_vars: |-
+            NODE_ENV=production
+            JWT_SECRET=${{ secrets.BRIMS_JWT_SECRET }}
+            REFRESH_TOKEN_SECRET=${{ secrets.BRIMS_REFRESH_TOKEN_SECRET }}
+            GEMINI_API_KEY=${{ secrets.BRIMS_GEMINI_API_KEY }}
+
+      - name: Verify deployed health endpoint
+        env:
+          SERVICE_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          curl --fail --show-error --silent --retry 8 --retry-delay 5 "${SERVICE_URL}/health"
+          echo "BRIMS_LOGIN_URL=${SERVICE_URL}/login" >> "${GITHUB_STEP_SUMMARY}"

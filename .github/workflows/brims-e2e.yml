@@ -1,0 +1,65 @@
+name: BRIMS AI Studio E2E
+
+on:
+  push:
+    branches:
+      - test/playwright-workflow-agents
+    paths:
+      - 'e2e/**'
+      - '.github/workflows/brims-e2e.yml'
+  workflow_dispatch:
+    inputs:
+      run_mutating_workflow:
+        description: Run approved mutating workflow tests
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brims-e2e-test-playwright-workflow-agents
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: e2e
+    env:
+      BRIMS_BASE_URL: ${{ secrets.BRIMS_BASE_URL }}
+      BRIMS_ADMIN_EMPLOYEE_ID: ${{ secrets.BRIMS_ADMIN_EMPLOYEE_ID }}
+      BRIMS_ADMIN_PASSWORD: ${{ secrets.BRIMS_ADMIN_PASSWORD }}
+      BRIMS_CREATOR_EMPLOYEE_ID: ${{ secrets.BRIMS_CREATOR_EMPLOYEE_ID }}
+      BRIMS_CREATOR_PASSWORD: ${{ secrets.BRIMS_CREATOR_PASSWORD }}
+      BRIMS_REVIEWER_EMPLOYEE_ID: ${{ secrets.BRIMS_REVIEWER_EMPLOYEE_ID }}
+      BRIMS_REVIEWER_PASSWORD: ${{ secrets.BRIMS_REVIEWER_PASSWORD }}
+      BRIMS_APPROVER_EMPLOYEE_ID: ${{ secrets.BRIMS_APPROVER_EMPLOYEE_ID }}
+      BRIMS_APPROVER_PASSWORD: ${{ secrets.BRIMS_APPROVER_PASSWORD }}
+      BRIMS_QA_ISSUANCE_EMPLOYEE_ID: ${{ secrets.BRIMS_QA_ISSUANCE_EMPLOYEE_ID }}
+      BRIMS_QA_ISSUANCE_PASSWORD: ${{ secrets.BRIMS_QA_ISSUANCE_PASSWORD }}
+      BRIMS_PRODUCTION_EMPLOYEE_ID: ${{ secrets.BRIMS_PRODUCTION_EMPLOYEE_ID }}
+      BRIMS_PRODUCTION_PASSWORD: ${{ secrets.BRIMS_PRODUCTION_PASSWORD }}
+      BRIMS_AUDIT_EMPLOYEE_ID: ${{ secrets.BRIMS_AUDIT_EMPLOYEE_ID }}
+      BRIMS_AUDIT_PASSWORD: ${{ secrets.BRIMS_AUDIT_PASSWORD }}
+      BRIMS_IT_ADMIN_EMPLOYEE_ID: ${{ secrets.BRIMS_IT_ADMIN_EMPLOYEE_ID }}
+      BRIMS_IT_ADMIN_PASSWORD: ${{ secrets.BRIMS_IT_ADMIN_PASSWORD }}
+      RUN_BRIMS_MUTATING_E2E: ${{ inputs.run_mutating_workflow || 'false' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Run read-only role smoke tests
+        run: npm run test:smoke
+      - name: Run approved mutating workflow
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_mutating_workflow }}
+        run: npm run test:workflow
+
+# Repository secrets are intentionally available only on the approved test branch.
