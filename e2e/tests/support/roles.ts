@@ -6,7 +6,7 @@ export type BrimsRole =
   | 'qaIssuance'
   | 'production'
   | 'audit'
-  | 'unauthorized';
+  | 'itAdmin';
 
 export interface RoleCredentials {
   employeeId: string;
@@ -21,7 +21,7 @@ const ENV_KEYS: Record<BrimsRole, [string, string]> = {
   qaIssuance: ['BRIMS_QA_ISSUANCE_EMPLOYEE_ID', 'BRIMS_QA_ISSUANCE_PASSWORD'],
   production: ['BRIMS_PRODUCTION_EMPLOYEE_ID', 'BRIMS_PRODUCTION_PASSWORD'],
   audit: ['BRIMS_AUDIT_EMPLOYEE_ID', 'BRIMS_AUDIT_PASSWORD'],
-  unauthorized: ['BRIMS_UNAUTHORIZED_EMPLOYEE_ID', 'BRIMS_UNAUTHORIZED_PASSWORD']
+  itAdmin: ['BRIMS_IT_ADMIN_EMPLOYEE_ID', 'BRIMS_IT_ADMIN_PASSWORD']
 };
 
 export function credentialsFor(role: BrimsRole): RoleCredentials {
