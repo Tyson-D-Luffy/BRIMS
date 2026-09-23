@@ -1,8 +1,9 @@
 name: BRIMS AI Studio E2E
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches:
+      - test/playwright-workflow-agents
     paths:
       - 'e2e/**'
       - '.github/workflows/brims-e2e.yml'
