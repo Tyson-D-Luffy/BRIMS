@@ -56,3 +56,5 @@ jobs:
       - name: Run approved mutating workflow
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_mutating_workflow }}
         run: npm run test:workflow
+
+# Repository secrets are intentionally available only on the approved test branch.
