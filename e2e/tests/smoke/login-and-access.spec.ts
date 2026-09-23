@@ -7,9 +7,8 @@ const roleChecks: Array<{ role: BrimsRole; route: string; text: RegExp }> = [
   { role: 'creator', route: '/product-masters', text: /product master/i },
   { role: 'reviewer', route: '/batch-sheet-masters/approvals', text: /approval|batch sheet/i },
   { role: 'approver', route: '/batch-sheet-masters/approvals', text: /approval|batch sheet/i },
-  { role: 'qaIssuance', route: '/batches', text: /batch sheet|request/i },
   { role: 'production', route: '/batches', text: /batch sheet|request/i },
-  { role: 'audit', route: '/audit/system', text: /audit/i }
+  { role: 'itAdmin', route: '/admin', text: /admin|user management|permission/i }
 ];
 
 for (const check of roleChecks) {
@@ -28,11 +27,11 @@ for (const check of roleChecks) {
   });
 }
 
-test('@smoke unauthorized user cannot open administration', async ({ browser }) => {
-  test.skip(!hasCredentials('unauthorized'), 'Unauthorized-role credentials are not configured');
+test('@smoke QA Chemist cannot open administration', async ({ browser }) => {
+  test.skip(!hasCredentials('creator'), 'QA Chemist credentials are not configured');
 
   const context = await browser.newContext();
-  const agent = new BrimsAgent(await context.newPage(), 'unauthorized');
+  const agent = new BrimsAgent(await context.newPage(), 'creator');
 
   await agent.login();
   await agent.verifyForbiddenRoute('/admin');
